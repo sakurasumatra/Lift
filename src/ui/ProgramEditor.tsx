@@ -71,7 +71,7 @@ export function ProgramEditor({ snap, onBack }: { snap: Snapshot; onBack: () => 
           <button className="btn primary small" disabled={!adding} onClick={() => { save(addSlot(dayId, slots, adding)); setAdding(''); }}>Add</button>
         </div>
       </fieldset>
-      <p className="muted" style={{ fontSize: 13 }}>Neighbouring exercises in the same group alternate sets as a superset. Changing a slot’s exercise resets its prescription (it’s re-predicted or calibrated).</p>
+      <p className="muted" style={{ fontSize: 13 }}>Neighbouring exercises in the same group alternate sets as a superset. Changing a slot’s exercise or rep range resets its prescription (it’s worked out again from your e1RM, or predicted or calibrated).</p>
     </div>
   );
 }

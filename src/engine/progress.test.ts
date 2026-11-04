@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { advanceReturnPhase, finishSessionState, nextAccessoryPrescription, setsForMain, deloadWeight } from './index';
-import { exState, finishInput, lib, set, slotState } from './testkit';
+import { advanceReturnPhase, finishSessionState, nextAccessoryPrescription, nextMainPrescription, prescribe, setsForMain, deloadWeight, suggestNextWeight, weightFromE1rm } from './index';
+import { exState, finishInput, lib, set, slotById, slotState } from './testkit';
 
 
 /** Three bench sets of the same kind: e1RM = weight × (1 + (reps+RIR)/30). */
@@ -294,5 +294,65 @@ describe('review fixes', () => {
     const r = finishSessionState(finishInput({ sets, returnPhase: { active: true, sessionsCompleted: 11 }, exerciseStates: { 'bench-press': exState('bench-press', 100) } }));
     expect(r.returnPhase.active).toBe(false);
     expect(r.exerciseStates['bench-press'].e1rm).toBeCloseTo(100 + 0.6 * 6.6667, 3);
+  });
+});
+
+describe('never below the empty bar (or below 0 for plates/pins)', () => {
+  it('e1RM → weight floors at the bar in kg and lb', () => {
+    expect(weightFromE1rm(20, 5, 3, lib['back-squat'], 80)).toBe(15); // raw maths, no unit given
+    expect(weightFromE1rm(20, 5, 3, lib['back-squat'], 80, 'kg')).toBe(20);
+    expect(weightFromE1rm(40, 5, 3, { ...lib['back-squat'], increment: 5 }, 176, 'lb')).toBe(45);
+    expect(weightFromE1rm(130, 5, 2, lib['back-squat'], 80, 'kg')).toBe(105); // normal weights unaffected
+  });
+  it('recalibrating from an empty-bar set stays on the bar', () => {
+    // 20 kg × 5 @ RPE 8 → e1RM 24.7 → 5 reps @ RIR 3 = 18.5 → would be 17.5
+    const s = suggestNextWeight({ set: { weight: 20, reps: 5, rpe: 8 }, kind: 'calibration', exercise: lib['back-squat'], repMin: 4, repMax: 6, targetReps: 5, targetRIR: 3, bodyweight: 80, unit: 'kg' });
+    expect(s.weight).toBe(20);
+  });
+  it('a "−1 increment" suggestion at the bar keeps the bar', () => {
+    const s = suggestNextWeight({ set: { weight: 20, reps: 2, rpe: 10 }, kind: 'normal', exercise: lib['bench-press'], repMin: 6, repMax: 8, targetReps: 7, targetRIR: 2, bodyweight: 80, unit: 'kg' });
+    expect(s).toMatchObject({ weight: 20, change: 'same', message: null });
+    const db = suggestNextWeight({ set: { weight: 0, reps: 5 }, kind: 'normal', exercise: lib['dumbbell-curl'], repMin: 10, repMax: 15, targetReps: 10, targetRIR: 2, bodyweight: 80, unit: 'kg' });
+    expect(db.weight).toBe(0);
+    // assistance has no floor: an assisted pull-up can still get more help
+    const pu = suggestNextWeight({ set: { weight: -20, reps: 3 }, kind: 'normal', exercise: lib['pull-up'], repMin: 6, repMax: 10, targetReps: 6, targetRIR: 2, bodyweight: 80, unit: 'kg' });
+    expect(pu.weight).toBe(-22.5);
+  });
+  it('the clamp and deloads never step below the bar', () => {
+    const r = nextMainPrescription({ exercise: lib['overhead-press'], slot: slotById('C2'), e1rm: 15, baseline: 20, baselineKind: 'normal', returnPhase: { active: false, sessionsCompleted: 0 }, bodyweight: 80, unit: 'kg' });
+    expect(r.weight).toBe(20);
+    expect(r.reason).toMatch(/^Same weight/);
+    expect(deloadWeight(20, lib['overhead-press'], 80, 'kg')).toBe(20);
+    expect(deloadWeight(20, lib['overhead-press'], 80)).toBe(17.5); // raw maths without a unit
+  });
+  it('an accessory already at 0 does not drop into negative weight', () => {
+    const r = nextAccessoryPrescription({ sets: [5, 5].map((reps) => ({ weight: 0, reps })), repMin: 8, repMax: 12, increment: 2.5, failCountBefore: 1, unit: 'kg', minWeight: 0 });
+    expect(r).toMatchObject({ weight: 0, failCount: 0 });
+  });
+});
+
+describe('swapped-in accessories keep progressing', () => {
+  // Lat pulldown slot B3 (8–12) swapped for Machine pulldown for the day.
+  const swapSets = (weight: number, reps: number[]) =>
+    reps.map((r, i) => ({ ...set('B3', i, weight, r, null, { prescribedWeight: weight }), exerciseId: 'machine-pulldown' }));
+
+  it('all sets at the top of the range → +1 increment next time it is swapped in', () => {
+    const r = finishSessionState(finishInput({ sets: swapSets(50, [12, 12, 12]), exerciseStates: { 'machine-pulldown': exState('machine-pulldown', 70) } }));
+    expect(r.slotStates.B3).toBeUndefined(); // the lat pulldown slot is untouched
+    expect(r.exerciseStates['machine-pulldown']).toMatchObject({ nextWeight: 52.5, accessoryFailCount: 0 });
+    expect(r.summary[0]).toMatchObject({ exerciseId: 'machine-pulldown', nextWeight: 52.5 });
+    const next = prescribe({ exercise: lib['machine-pulldown'], slot: slotById('B3'), exerciseState: r.exerciseStates['machine-pulldown'], familyMembers: [], bodyweight: 80, returnPhase: { active: false, sessionsCompleted: 0 }, unit: 'kg' });
+    expect(next).toMatchObject({ weight: 52.5, kind: 'normal' });
+    expect(next.reason).toContain('all sets reached 12');
+  });
+  it('below the range two swapped sessions running → −1 increment', () => {
+    const first = finishSessionState(finishInput({ sets: swapSets(50, [9, 8, 6]), exerciseStates: { 'machine-pulldown': exState('machine-pulldown', 70) } }));
+    expect(first.exerciseStates['machine-pulldown']).toMatchObject({ nextWeight: 50, accessoryFailCount: 1 });
+    const second = finishSessionState(finishInput({ sets: swapSets(50, [9, 8, 6]), exerciseStates: first.exerciseStates }));
+    expect(second.exerciseStates['machine-pulldown']).toMatchObject({ nextWeight: 47.5, accessoryFailCount: 0 });
+  });
+  it('a first-ever swapped session also sets the next weight', () => {
+    const r = finishSessionState(finishInput({ sets: swapSets(40, [12, 12, 12]) }));
+    expect(r.exerciseStates['machine-pulldown'].nextWeight).toBe(42.5);
   });
 });

@@ -1,7 +1,7 @@
 import { effectiveLoad, rpeToRir, setE1rm } from './e1rm';
 import { weightFromE1rm } from './prescribe';
 import type { ExerciseDef, PrescriptionKind, Unit } from './types';
-import { formatNumber, formatSigned } from './units';
+import { formatNumber, formatSigned, minLoad } from './units';
 
 export interface SuggestInput {
   set: { weight: number; reps: number; rpe?: number | null };
@@ -38,7 +38,7 @@ export function suggestNextWeight(input: SuggestInput): Suggestion {
 
   if (kind === 'calibration' && set.reps > 0) {
     const e = setE1rm(effectiveLoad(exercise.equipment, set.weight, bodyweight), set.reps, rir);
-    const weight = weightFromE1rm(e, targetReps, targetRIR, exercise, bodyweight);
+    const weight = weightFromE1rm(e, targetReps, targetRIR, exercise, bodyweight, unit);
     return {
       weight,
       change: 'recalibrated',
@@ -56,7 +56,7 @@ export function suggestNextWeight(input: SuggestInput): Suggestion {
       message: `Suggested ${formatSigned(inc, unit)} — that looked easy`,
     };
   }
-  if (down) {
+  if (down && set.weight - inc >= minLoad(exercise.equipment, unit)) {
     return {
       weight: set.weight - inc,
       change: 'down',

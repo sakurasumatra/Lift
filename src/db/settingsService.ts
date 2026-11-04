@@ -24,6 +24,7 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
       ...s,
       e1rm: clean(convertWeight(s.e1rm, from, to)),
       lastWeight: s.lastWeight == null ? undefined : convertRounded(s.lastWeight, from, to, inc.get(s.exerciseId) ?? 1),
+      nextWeight: s.nextWeight == null ? undefined : convertRounded(s.nextWeight, from, to, inc.get(s.exerciseId) ?? 1),
     })));
 
     const days = await db.programDays.toArray();
@@ -102,15 +103,17 @@ export async function updateExercise(db: LiftDB, id: string, patch: Partial<Pick
 
 /**
  * Save a day's slots. Slots that were removed lose their slot state, and so do slots whose exercise
- * changed (a prescription for the old exercise doesn't apply to the new one).
+ * or rep range changed (a prescription for the old exercise or range doesn't fit the new one; the
+ * next one comes from the exercise's e1RM or last weight). Reordering, regrouping and set counts keep it.
  */
 export async function saveProgramDay(db: LiftDB, dayId: string, slots: SlotDef[]): Promise<void> {
   await db.transaction('rw', db.programDays, db.slotState, async () => {
     const day = (await db.programDays.get(dayId))!;
-    const before = new Map(day.slots.map((s) => [s.slotId, s.exerciseId]));
+    const before = new Map(day.slots.map((s) => [s.slotId, s]));
     const stale = [...before.keys()].filter((id) => {
       const now = slots.find((s) => s.slotId === id);
-      return !now || now.exerciseId !== before.get(id);
+      const was = before.get(id)!;
+      return !now || now.exerciseId !== was.exerciseId || now.repMin !== was.repMin || now.repMax !== was.repMax;
     });
     await db.slotState.bulkDelete(stale);
     await db.programDays.put({ ...day, slots });

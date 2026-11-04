@@ -49,6 +49,9 @@ export interface ExerciseState {
   sessionCount: number;
   /** Last working weight (logged-weight terms); used when there is no slot state (swaps, seeds). */
   lastWeight?: number;
+  /** Accessories: next weight from double progression, used when there is no slot state (swaps). */
+  nextWeight?: number;
+  nextReason?: string;
   /** Seeded with a 3+ month gap: the first set of the first session is a calibration set. */
   calibrateFirst?: boolean;
 }

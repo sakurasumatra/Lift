@@ -26,6 +26,16 @@ export const DEFAULT_INCREMENTS: Record<Unit, Record<Equipment, number>> = {
 
 export const BAR_WEIGHT: Record<Unit, number> = { kg: 20, lb: 45 };
 
+/**
+ * The lightest weight the app will prescribe: the empty bar for barbell lifts, 0 for dumbbells and
+ * machines, and no floor for bodyweight lifts (negative added load = assistance).
+ */
+export function minLoad(equipment: Equipment, unit: Unit): number {
+  if (equipment === 'barbell') return BAR_WEIGHT[unit];
+  if (equipment === 'bodyweight') return -Infinity;
+  return 0;
+}
+
 /** "62.5", "60" — no trailing zeros. */
 export function formatNumber(value: number, digits = 2): string {
   return String(Number(value.toFixed(digits)));
