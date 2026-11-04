@@ -19,6 +19,11 @@ describe('in-session suggestions', () => {
   it('−1 increment when RIR 0 and reps < target', () => {
     expect(suggestNextWeight({ ...base, set: { weight: 80, reps: 6, rpe: 10 } })).toMatchObject({ weight: 77.5, change: 'down' });
   });
+  it('reps exactly at repMin is not "below repMin"', () => {
+    expect(suggestNextWeight({ ...base, set: { weight: 80, reps: 6, rpe: 8 } })).toMatchObject({ weight: 80, change: 'same' });
+    const acc = { ...base, exercise: lib['lat-pulldown'], repMin: 8, repMax: 12, targetReps: 8 };
+    expect(suggestNextWeight({ ...acc, set: { weight: 50, reps: 8 } }).change).toBe('same');
+  });
   it('keeps weight otherwise (RIR 0 at target is fine)', () => {
     expect(suggestNextWeight({ ...base, set: { weight: 80, reps: 7, rpe: 10 } })).toMatchObject({ weight: 80, change: 'same', message: null });
   });

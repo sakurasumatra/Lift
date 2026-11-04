@@ -30,6 +30,29 @@ describe('miss detection and deload', () => {
     expect(r.deloaded).toEqual([]);
   });
 
+  it('pre-update vs post-update matters: a session that is a miss only against the OLD value still counts', () => {
+    // 80 × 6 @ RPE 9 → 98.67. Old smoothed 101: 98.67 < 98.98 → miss.
+    // Against the post-update value (101 + 0.35 × (98.67 − 101) = 100.18 → 98% = 98.18) it would NOT be a miss.
+    const r = finishSessionState(finishInput({
+      exerciseStates: { 'bench-press': exState('bench-press', 101, { missCount: 1 }) },
+      slotStates: start().slotStates,
+      sets: benchSets('A2', 80, 6, 9),
+    }));
+    expect(r.deloaded).toEqual(['bench-press']);
+  });
+
+  it('a miss carried into the return phase is cleared, not built on', () => {
+    // missCount 1 from before the phase was (re)enabled: a miss session must neither deload nor leave the count pending.
+    const r = finishSessionState(finishInput({
+      returnPhase: { active: true, sessionsCompleted: 0 },
+      exerciseStates: { 'bench-press': exState('bench-press', 100, { missCount: 1 }) },
+      slotStates: start().slotStates,
+      sets: benchSets('A2', 73, 6, 9),
+    }));
+    expect(r.deloaded).toEqual([]);
+    expect(r.exerciseStates['bench-press'].missCount).toBe(0);
+  });
+
   it('does not count a session at 98% as a miss, and resets the count', () => {
     const r = finishSessionState(finishInput({
       exerciseStates: { 'bench-press': exState('bench-press', 100, { missCount: 1 }) },
