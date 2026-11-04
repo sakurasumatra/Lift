@@ -1,0 +1,116 @@
+import type { ExerciseDef, ExerciseState, SlotDef, SlotState } from '../engine';
+import { finishSessionState } from '../engine';
+import type { LiftDB } from './db';
+import type { ProgramDayRow, SessionRow, SetRow, SettingsRow } from './schema';
+
+export interface Snapshot {
+  settings: SettingsRow;
+  exercises: Record<string, ExerciseDef>;
+  days: ProgramDayRow[];
+  exerciseStates: Record<string, ExerciseState>;
+  slotStates: Record<string, SlotState>;
+}
+
+const byId = <T,>(rows: T[], key: (r: T) => string) => Object.fromEntries(rows.map((r) => [key(r), r]));
+
+export async function loadSnapshot(db: LiftDB): Promise<Snapshot> {
+  const [settings, exercises, days, exerciseStates, slotStates] = await Promise.all([
+    db.settings.get('main'),
+    db.exercises.toArray(),
+    db.programDays.orderBy('order').toArray(),
+    db.exerciseState.toArray(),
+    db.slotState.toArray(),
+  ]);
+  return {
+    settings: settings!,
+    exercises: byId(exercises, (e) => e.id),
+    days,
+    exerciseStates: byId(exerciseStates, (s) => s.exerciseId),
+    slotStates: byId(slotStates, (s) => s.slotId),
+  };
+}
+
+/** The day after the most recently finished session (early-ended sessions count); A when none. */
+export async function nextDayId(db: LiftDB): Promise<string> {
+  const days = await db.programDays.orderBy('order').toArray();
+  if (!days.length) throw new Error('No program days');
+  const finished = (await db.sessions.where('finishedAt').above(0).sortBy('finishedAt')).pop();
+  if (!finished) return days[0].id;
+  const idx = days.findIndex((d) => d.id === finished.dayId);
+  return days[(idx + 1) % days.length].id;
+}
+
+export async function activeSession(db: LiftDB): Promise<SessionRow | undefined> {
+  const open = (await db.sessions.toArray()).filter((s) => s.finishedAt == null);
+  return open.sort((a, b) => b.startedAt - a.startedAt)[0];
+}
+
+export async function startSession(db: LiftDB, dayId?: string): Promise<SessionRow> {
+  const existing = await activeSession(db);
+  if (existing) return existing;
+  const row: SessionRow = {
+    id: crypto.randomUUID(),
+    dayId: dayId ?? (await nextDayId(db)),
+    startedAt: Date.now(),
+    swaps: [],
+  };
+  await db.sessions.add(row);
+  return row;
+}
+
+export const setRowId = (sessionId: string, slotId: string, setIndex: number) => `${sessionId}:${slotId}:${setIndex}`;
+
+/** Insert or overwrite the set at (session, slot, index). */
+export async function saveSet(db: LiftDB, row: Omit<SetRow, 'id' | 'completedAt'> & { completedAt?: number }): Promise<void> {
+  await db.sets.put({ ...row, id: setRowId(row.sessionId, row.slotId, row.setIndex), completedAt: row.completedAt ?? Date.now() });
+}
+
+export async function setsForSession(db: LiftDB, sessionId: string): Promise<SetRow[]> {
+  return (await db.sets.where('sessionId').equals(sessionId).toArray()).sort((a, b) => a.completedAt - b.completedAt);
+}
+
+/** Finish a session: run the engine, persist new states, summary and the return-phase counter. */
+export async function finishSession(db: LiftDB, sessionId: string, endedEarly: boolean): Promise<SessionRow> {
+  return db.transaction('rw', db.tables, async () => {
+    const session = (await db.sessions.get(sessionId))!;
+    const snap = await loadSnapshot(db);
+    const sets = await setsForSession(db, sessionId);
+    const allSlots: SlotDef[] = snap.days.flatMap((d) => d.slots);
+    const result = finishSessionState({
+      sets,
+      allSlots,
+      exercises: snap.exercises,
+      exerciseStates: snap.exerciseStates,
+      slotStates: snap.slotStates,
+      bodyweight: snap.settings.bodyweight ?? 0,
+      unit: snap.settings.units,
+      returnPhase: snap.settings.returnPhase,
+      now: Date.now(),
+    });
+    await db.exerciseState.bulkPut(Object.values(result.exerciseStates));
+    await db.slotState.bulkPut(Object.values(result.slotStates));
+    await db.settings.update('main', { returnPhase: result.returnPhase });
+    const done: SessionRow = {
+      ...session,
+      finishedAt: Date.now(),
+      endedEarly,
+      summary: {
+        items: result.summary,
+        stronger: result.stronger,
+        deloaded: result.deloaded,
+        totalSets: sets.length,
+        returnSessionNumber: snap.settings.returnPhase.active ? snap.settings.returnPhase.sessionsCompleted + 1 : null,
+      },
+    };
+    await db.sessions.put(done);
+    return done;
+  });
+}
+
+/** Abandon a session with nothing logged. */
+export async function discardSession(db: LiftDB, sessionId: string): Promise<void> {
+  await db.transaction('rw', db.sessions, db.sets, async () => {
+    await db.sets.where('sessionId').equals(sessionId).delete();
+    await db.sessions.delete(sessionId);
+  });
+}
