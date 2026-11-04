@@ -17,17 +17,16 @@ export const PREDICTION_HAIRCUT = 0.95;
 /** Families whose lifts jump by up to two increments per session. */
 const BIG_JUMP_FAMILIES: FamilyId[] = ['squat', 'hinge'];
 
-export function clampIncrements(family: FamilyId): number {
-  return BIG_JUMP_FAMILIES.includes(family) ? 2 : 1;
+export function clampIncrements(family: FamilyId | undefined): number {
+  return family && BIG_JUMP_FAMILIES.includes(family) ? 2 : 1;
 }
 
-/** targetReps / targetRIR for a slot. Main: repMin+1 @ 2 (3 early in return phase). Accessory: repMin @ 2. */
+/** targetReps / targetRIR for a slot. Estimated max: repMin+1 @ 2 (3 early in return phase). Reps first: repMin @ 2. */
 export function targetsFor(
-  exercise: Pick<ExerciseDef, 'type'>,
-  slot: Pick<SlotDef, 'repMin' | 'repMax'>,
+  slot: Pick<SlotDef, 'repMin' | 'repMax' | 'progressionStyle'>,
   rp: ReturnPhase,
 ): { targetReps: number; targetRIR: number } {
-  if (exercise.type === 'main') {
+  if (slot.progressionStyle === 'estimatedMax') {
     return {
       targetReps: Math.min(slot.repMin + 1, slot.repMax),
       targetRIR: targetRirFor(rp),
@@ -79,7 +78,7 @@ export function pickPredictionSource(
 ): { exercise: ExerciseDef; state: ExerciseState } | null {
   let best: { exercise: ExerciseDef; state: ExerciseState } | null = null;
   for (const m of members) {
-    if (m.exercise.id === target.id || m.exercise.family !== target.family || !m.state) continue;
+    if (!target.family || m.exercise.id === target.id || m.exercise.family !== target.family || !m.state) continue;
     if (!best || m.state.updatedAt > best.state.updatedAt) {
       best = { exercise: m.exercise, state: m.state };
     }
@@ -91,7 +90,7 @@ export function predictE1rm(
   source: { exercise: ExerciseDef; state: ExerciseState },
   target: ExerciseDef,
 ): number {
-  return source.state.e1rm * (target.familyRatio / source.exercise.familyRatio) * PREDICTION_HAIRCUT;
+  return source.state.e1rm * ((target.familyRatio ?? 1) / (source.exercise.familyRatio ?? 1)) * PREDICTION_HAIRCUT;
 }
 
 export function explainerFor(kind: PrescriptionKind, prescription?: Prescription, sourceName?: string, sourceE1rm?: number, unit: Unit = 'kg'): string {
@@ -109,7 +108,7 @@ export function explainerFor(kind: PrescriptionKind, prescription?: Prescription
 
 export interface PrescribeInput {
   exercise: ExerciseDef;
-  slot: Pick<SlotDef, 'repMin' | 'repMax'>;
+  slot: Pick<SlotDef, 'repMin' | 'repMax' | 'progressionStyle'>;
   /** Pass only when the slot's own exercise is being trained (not a swap). */
   slotState?: SlotState;
   exerciseState?: ExerciseState;
@@ -125,7 +124,7 @@ export interface PrescribeInput {
  */
 export function prescribe(input: PrescribeInput): Prescription {
   const { exercise, slot, slotState, exerciseState, familyMembers, bodyweight, returnPhase, unit } = input;
-  const { targetReps, targetRIR } = targetsFor(exercise, slot, returnPhase);
+  const { targetReps, targetRIR } = targetsFor(slot, returnPhase);
   const base = { targetReps, targetRIR };
 
   if (slotState) {
@@ -138,7 +137,7 @@ export function prescribe(input: PrescribeInput): Prescription {
   }
 
   if (exerciseState) {
-    if (exercise.type === 'accessory' && exerciseState.nextWeight != null) {
+    if (slot.progressionStyle === 'repsFirst' && exerciseState.nextWeight != null) {
       return {
         ...base,
         weight: exerciseState.nextWeight,
@@ -146,7 +145,7 @@ export function prescribe(input: PrescribeInput): Prescription {
         reason: exerciseState.nextReason ?? `${formatNumber(exerciseState.nextWeight)} ${unit}: from your last session`,
       };
     }
-    if (exercise.type === 'accessory' && exerciseState.lastWeight != null) {
+    if (slot.progressionStyle === 'repsFirst' && exerciseState.lastWeight != null) {
       return {
         ...base,
         weight: exerciseState.lastWeight,

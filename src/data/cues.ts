@@ -1,5 +1,7 @@
 /** Original form cues (3–4 short bullets per exercise), written for this app. */
-export const CUES: Record<string, string[]> = {
+import { EXTRA_CUES } from './cuesExtra';
+
+const CORE_CUES: Record<string, string[]> = {
   'bench-press': ['Shoulder blades pinched and down', 'Feet planted, slight arch', 'Lower to mid-chest under control', 'Press up and slightly back'],
   'dumbbell-bench-press': ['Start with dumbbells over shoulders', 'Elbows about 45° from your sides', 'Lower until you feel a stretch in the chest', 'Press up without clanking the bells'],
   'incline-dumbbell-press': ['Bench at a low incline, about 30°', 'Keep shoulder blades set against the pad', 'Lower to upper-chest level', 'Drive up and slightly in'],
@@ -33,3 +35,6 @@ export const CUES: Record<string, string[]> = {
   'cable-pushdown': ['Elbows pinned to your sides', 'Push down until arms are straight', 'Squeeze the triceps at the bottom', 'Return until forearms are just past parallel'],
   'overhead-cable-extension': ['Face away from the cable, elbows pointing forward', 'Keep elbows close to your head', 'Extend fully, then stretch back', 'Brace your core, don’t arch'],
 };
+
+/** Every bundled exercise has cues; custom exercises have none. */
+export const CUES: Record<string, string[]> = { ...CORE_CUES, ...EXTRA_CUES };

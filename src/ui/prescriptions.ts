@@ -1,5 +1,5 @@
 import type { LoggedSet, Prescription, PrescriptionKind, SlotDef } from '../engine';
-import { BAR_WEIGHT, prescribe, setsForMain, suggestNextWeight, targetsFor } from '../engine';
+import { BAR_WEIGHT, isMaxStyle, prescribe, setsForMain, suggestNextWeight, targetsFor } from '../engine';
 import type { Snapshot } from '../db/service';
 
 /** Prescription for a slot, optionally for a swapped-in exercise. */
@@ -17,8 +17,8 @@ export function slotPrescription(snap: Snapshot, slot: SlotDef, exerciseId = slo
   });
 }
 
-export function plannedSets(snap: Snapshot, slot: SlotDef, exerciseId = slot.exerciseId): number {
-  return snap.exercises[exerciseId].type === 'main' ? setsForMain(slot.sets, snap.settings.returnPhase) : slot.sets;
+export function plannedSets(snap: Snapshot, slot: SlotDef): number {
+  return isMaxStyle(slot) ? setsForMain(slot.sets, snap.settings.returnPhase) : slot.sets;
 }
 
 export interface SetDefaults {
@@ -46,7 +46,7 @@ export function setDefaults(
   const ex = snap.exercises[exerciseId];
   const rx = slotPrescription(snap, slot, exerciseId);
   if (setIndex > 0 && previous) {
-    const targets = targetsFor(ex, slot, settings.returnPhase);
+    const targets = targetsFor(slot, settings.returnPhase);
     const prevKind = previous.prescriptionKind ?? rx.kind;
     const sug = suggestNextWeight({
       set: previous, kind: prevKind, exercise: ex, repMin: slot.repMin, repMax: slot.repMax,

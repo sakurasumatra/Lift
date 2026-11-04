@@ -40,12 +40,11 @@ export function seedExercise(
     sessionCount: 0,
     calibrateFirst: ago === '3-6' || ago === '6-plus',
   };
-  if (exercise.type === 'accessory') {
-    // Bodyweight lifts detrain on effective load: assisted −20 kg at 80 kg becomes −29 kg (more help), not −17.
-    const start = exercise.equipment === 'bodyweight'
-      ? effectiveLoad('bodyweight', weight, bodyweight) * DETRAINING[ago] - bodyweight
-      : weight * DETRAINING[ago];
-    state.lastWeight = floorToIncrement(start, exercise.increment);
-  }
+  // Reps-first slots start at the remembered weight (the e1RM serves estimated-max slots).
+  // Bodyweight lifts detrain on effective load: assisted −20 kg at 80 kg becomes −29 kg (more help), not −17.
+  const start = exercise.equipment === 'bodyweight'
+    ? effectiveLoad('bodyweight', weight, bodyweight) * DETRAINING[ago] - bodyweight
+    : weight * DETRAINING[ago];
+  state.lastWeight = floorToIncrement(start, exercise.increment);
   return state;
 }

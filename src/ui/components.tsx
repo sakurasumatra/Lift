@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { FAMILY_LABELS, rpeToRir, type ExerciseDef, type FamilyId, type PrescriptionKind, type ReturnPhase } from '../engine';
+import { FAMILY_LABELS, MUSCLE_LABELS, rpeToRir, type ExerciseDef, type PrescriptionKind, type ReturnPhase } from '../engine';
 import { KIND_LABEL, imageUrl } from './prescriptions';
 
 export function Sheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
@@ -29,10 +29,12 @@ export function ReturnBanner({ rp }: { rp: ReturnPhase }) {
 export function ExerciseImage({ exercise }: { exercise: ExerciseDef }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [exercise.id]);
+  // Custom exercises and the few without a bundled image get the placeholder straight away.
+  const none = failed || exercise.isCustom || !exercise.imageRef;
   return (
     <div className="img">
-      {failed ? (
-        <div className="ph">{FAMILY_LABELS[exercise.family as FamilyId]}</div>
+      {none ? (
+        <div className="ph">{exercise.family ? FAMILY_LABELS[exercise.family] : MUSCLE_LABELS[exercise.primaryMuscle]}</div>
       ) : (
         <img src={imageUrl(exercise.id)} alt={`${exercise.name} demonstration`} onError={() => setFailed(true)} />
       )}

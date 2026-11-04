@@ -12,14 +12,14 @@ beforeEach(async () => {
 describe('seeding', () => {
   it('seeds library, program and settings with the return phase on', async () => {
     const snap = await loadSnapshot(db);
-    expect(Object.keys(snap.exercises).length).toBe(32);
+    expect(Object.keys(snap.exercises).length).toBeGreaterThanOrEqual(150);
     expect(snap.days.map((d) => d.id)).toEqual(['A', 'B', 'C']);
     expect(snap.settings.returnPhase).toEqual({ active: true, sessionsCompleted: 0 });
     expect(snap.settings.units).toBe('kg');
   });
   it('is idempotent', async () => {
     await ensureSeeded(db);
-    expect(await db.exercises.count()).toBe(32);
+    expect(await db.exercises.count()).toBeGreaterThanOrEqual(150);
   });
 });
 

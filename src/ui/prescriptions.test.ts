@@ -7,7 +7,10 @@ import { setDefaults } from './prescriptions';
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   settings: { ...defaultSettings(), bodyweight: 80, returnPhase: { active: false, sessionsCompleted: 0 } },
   exercises: lib,
+  programs: [],
+  activeProgram: null,
   days,
+  activeDays: days,
   exerciseStates: {},
   slotStates: {},
   ...over,

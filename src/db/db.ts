@@ -1,11 +1,13 @@
 import Dexie, { type Table } from 'dexie';
-import type { ExerciseDef, ExerciseState, SlotState } from '../engine';
+import type { ExerciseDef, ExerciseState, Program, SlotState } from '../engine';
 import { DEFAULT_INCREMENTS, DEFAULT_REST, defaultReturnPhase } from '../engine';
-import { buildExerciseLibrary, buildSeedProgram } from '../data/library';
+import { buildExerciseLibrary, buildSeedProgram, seedProgramRow, SEED_PROGRAM_ID } from '../data/library';
+import { migrateV1ToV2 } from './migrate';
 import type { ProgramDayRow, SessionRow, SetRow, SettingsRow } from './schema';
 
 export class LiftDB extends Dexie {
   exercises!: Table<ExerciseDef, string>;
+  programs!: Table<Program, string>;
   programDays!: Table<ProgramDayRow, string>;
   slotState!: Table<SlotState, string>;
   sessions!: Table<SessionRow, string>;
@@ -24,12 +26,31 @@ export class LiftDB extends Dexie {
       exerciseState: 'exerciseId',
       settings: 'id',
     });
+    // v2: saved programs, per-slot progression style, the broader exercise library.
+    this.version(2)
+      .stores({
+        exercises: 'id, family, primaryMuscle, equipment',
+        programs: 'id, createdAt',
+        programDays: 'id, programId, order',
+      })
+      .upgrade(async (tx) => {
+        const out = migrateV1ToV2({
+          exercises: await tx.table('exercises').toArray(),
+          programDays: await tx.table('programDays').toArray(),
+          settings: await tx.table('settings').toArray(),
+        });
+        await tx.table('exercises').bulkPut(out.exercises);
+        await tx.table('programs').bulkPut(out.programs);
+        await tx.table('programDays').bulkPut(out.programDays);
+        await tx.table('settings').bulkPut(out.settings);
+      });
   }
 }
 
 export const defaultSettings = (): SettingsRow => ({
   id: 'main',
   units: 'kg',
+  activeProgramId: SEED_PROGRAM_ID,
   increments: { ...DEFAULT_INCREMENTS.kg },
   bodyweight: null,
   restTimes: { ...DEFAULT_REST },
@@ -39,12 +60,17 @@ export const defaultSettings = (): SettingsRow => ({
   returnPhase: defaultReturnPhase(),
 });
 
-/** Seeds the exercise library, the A/B/C program and settings on first run. Idempotent. */
+/** Seeds the exercise library, the 3-day template program and settings on first run. Idempotent. */
 export async function ensureSeeded(db: LiftDB): Promise<void> {
-  await db.transaction('rw', db.exercises, db.programDays, db.settings, async () => {
-    if ((await db.settings.get('main')) == null) await db.settings.put(defaultSettings());
+  await db.transaction('rw', db.exercises, db.programs, db.programDays, db.settings, async () => {
+    const fresh = (await db.settings.get('main')) == null;
+    if (fresh) await db.settings.put(defaultSettings());
     if ((await db.exercises.count()) === 0) await db.exercises.bulkPut(buildExerciseLibrary('kg'));
-    if ((await db.programDays.count()) === 0) await db.programDays.bulkPut(buildSeedProgram());
+    // Only a first run gets the template program; later, having no program is a state the user chose.
+    if (fresh) {
+      await db.programs.put(seedProgramRow());
+      await db.programDays.bulkPut(buildSeedProgram());
+    }
   });
 }
 

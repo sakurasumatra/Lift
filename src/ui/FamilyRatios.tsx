@@ -5,7 +5,7 @@ import { FAMILY_LABELS, type FamilyId } from '../engine';
 import { NumField, SubHeader } from './fields';
 
 export function FamilyRatios({ snap, onBack }: { snap: Snapshot; onBack: () => void }) {
-  const families = [...new Set(Object.values(snap.exercises).map((e) => e.family))] as FamilyId[];
+  const families = [...new Set(Object.values(snap.exercises).map((e) => e.family).filter((f): f is FamilyId => !!f))];
   return (
     <div className="page">
       <SubHeader title="Family ratios" onBack={onBack} />
@@ -16,7 +16,7 @@ export function FamilyRatios({ snap, onBack }: { snap: Snapshot; onBack: () => v
           {Object.values(snap.exercises).filter((e) => e.family === f).map((e) => (
             <div className="ex-row" key={e.id}>
               <span className="name">{e.name}</span>
-              <div style={{ width: 100 }}><NumField label={`${e.name} ratio`} value={e.familyRatio} min={0.01} onCommit={(v) => setFamilyRatio(db, e.id, v)} /></div>
+              <div style={{ width: 100 }}><NumField label={`${e.name} ratio`} value={e.familyRatio ?? 1} min={0.01} onCommit={(v) => setFamilyRatio(db, e.id, v)} /></div>
             </div>
           ))}
         </div>

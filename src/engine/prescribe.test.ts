@@ -11,13 +11,13 @@ const ret = (n = 0) => ({ active: true, sessionsCompleted: n });
 describe('targets and weights', () => {
   it('main: repMin+1 at RIR 2; RIR 3 in return sessions 1–6 only', () => {
     const slot = slotById('A1'); // 4–6
-    expect(targetsFor(lib['back-squat'], slot, off)).toEqual({ targetReps: 5, targetRIR: 2 });
-    expect(targetsFor(lib['back-squat'], slot, ret(0))).toEqual({ targetReps: 5, targetRIR: 3 });
-    expect(targetsFor(lib['back-squat'], slot, ret(5))).toEqual({ targetReps: 5, targetRIR: 3 });
-    expect(targetsFor(lib['back-squat'], slot, ret(6))).toEqual({ targetReps: 5, targetRIR: 2 });
+    expect(targetsFor(slot, off)).toEqual({ targetReps: 5, targetRIR: 2 });
+    expect(targetsFor(slot, ret(0))).toEqual({ targetReps: 5, targetRIR: 3 });
+    expect(targetsFor(slot, ret(5))).toEqual({ targetReps: 5, targetRIR: 3 });
+    expect(targetsFor(slot, ret(6))).toEqual({ targetReps: 5, targetRIR: 2 });
   });
   it('accessory: repMin at RIR 2', () => {
-    expect(targetsFor(lib['lat-pulldown'], slotById('B3'), ret(0))).toEqual({ targetReps: 8, targetRIR: 2 });
+    expect(targetsFor(slotById('B3'), ret(0))).toEqual({ targetReps: 8, targetRIR: 2 });
   });
   it('weight = e1RM / (1 + (reps+RIR)/30), rounded down', () => {
     // 130 / (1 + 7/30) = 105.4 → 105
@@ -126,7 +126,14 @@ describe('swaps', () => {
     const pred = prescribe({ exercise: lib['dumbbell-bench-press'], slot: slotById('A2'), familyMembers: members, bodyweight: 80, returnPhase: off, unit: 'kg' });
     expect(own.kind).toBe('normal');
     expect(pred.kind).toBe('predicted');
-    // accessory target: repMin 6 @ RIR 2 → (100 × 0.4 × 0.95 = 38) / (1 + 8/30) = 30
+    // The slot's style sets the targets, not the exercise: A2 is estimated-max, so repMin+1 = 7 @ RIR 2
+    // → (100 × 0.4 × 0.95 = 38) / (1 + 9/30) = 29.2 → 28
+    expect(pred.weight).toBe(28);
+  });
+  it('the same swap into a reps-first slot targets repMin @ RIR 2', () => {
+    const slot = { ...slotById('A2'), progressionStyle: 'repsFirst' as const };
+    const pred = prescribe({ exercise: lib['dumbbell-bench-press'], slot, familyMembers: members, bodyweight: 80, returnPhase: off, unit: 'kg' });
+    // 38 / (1 + 8/30) = 30
     expect(pred.weight).toBe(30);
   });
 });

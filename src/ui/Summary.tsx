@@ -2,6 +2,7 @@ import { formatNumber } from '../engine';
 import type { Snapshot } from '../db/service';
 import type { SessionRow } from '../db/schema';
 import { KindBadge } from './components';
+import { sessionDayName } from './days';
 
 export function Summary({ snap, session, onDone }: { snap: Snapshot; session: SessionRow; onDone: () => void }) {
   const unit = snap.settings.units;
@@ -11,7 +12,7 @@ export function Summary({ snap, session, onDone }: { snap: Snapshot; session: Se
     <div className="page">
       <h1 className="big-title">Workout done 💪</h1>
       <div className="muted">
-        Day {session.dayId} · {s.totalSets} sets{session.endedEarly ? ' · ended early' : ''}
+        {sessionDayName(snap, session)} · {s.totalSets} sets{session.endedEarly ? ' · ended early' : ''}
         {s.returnSessionNumber ? ` · return phase session ${s.returnSessionNumber} of 12` : ''}
       </div>
 

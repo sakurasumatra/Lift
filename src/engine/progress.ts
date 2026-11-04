@@ -40,7 +40,7 @@ export interface NextMainInput {
 /** Normal main-lift prescription from the (already updated) smoothed e1RM, clamped per slot. */
 export function nextMainPrescription(input: NextMainInput): { weight: number; reason: string } {
   const { exercise, slot, e1rm, baseline, baselineKind, returnPhase, bodyweight, unit } = input;
-  const { targetReps, targetRIR } = targetsFor(exercise, slot, returnPhase);
+  const { targetReps, targetRIR } = targetsFor(slot, returnPhase);
   const candidate = weightFromE1rm(e1rm, targetReps, targetRIR, exercise, bodyweight, unit);
   const n = clampIncrements(exercise.family);
   // A calibration/predicted baseline was a guess, not a trusted prior prescription: don't clamp to it.
@@ -150,6 +150,13 @@ export function finishSessionState(input: FinishInput): FinishResult {
     setsByExercise.get(s.exerciseId)!.push(s);
   }
 
+  // An exercise is tracked as an "estimated max" lift today when any slot it was trained in uses that style.
+  const maxTracked = new Set<string>();
+  for (const s of sets) {
+    const sl = allSlots.find((x) => x.slotId === s.slotId);
+    if (sl && sl.progressionStyle === 'estimatedMax') maxTracked.add(s.exerciseId);
+  }
+
   // 1. Exercise-level state: e1RM smoothing, miss detection (against the PRE-update value).
   for (const [exId, exSets] of setsByExercise) {
     const ex = exercises[exId];
@@ -162,7 +169,7 @@ export function finishSessionState(input: FinishInput): FinishResult {
     let missCount = prev?.missCount ?? 0;
     if (rpActive) {
       missCount = 0; // misses and deloads are disabled in the return phase
-    } else if (ex.type === 'main' && !isFirst) {
+    } else if (maxTracked.has(exId) && !isFirst) {
       if (isMiss(session, prev!.e1rm)) {
         missCount += 1;
         if (missCount >= 2) {
@@ -225,7 +232,7 @@ export function finishSessionState(input: FinishInput): FinishResult {
       .sort((a, b) => a.setIndex - b.setIndex);
     const st = input.slotStates[slot.slotId];
 
-    if (ex.type === 'main') {
+    if (slot.progressionStyle === 'estimatedMax') {
       const exState = newExStates[ex.id];
       if (!exState) continue; // exercise wasn't trained today: nothing changed
       let baseline: number | undefined;
@@ -297,7 +304,7 @@ export function finishSessionState(input: FinishInput): FinishResult {
       .filter((s) => s.slotId === slot.slotId && s.exerciseId !== slot.exerciseId)
       .sort((a, b) => a.setIndex - b.setIndex);
     const swapEx = swapped.length ? exercises[swapped[0].exerciseId] : undefined;
-    if (swapEx?.type === 'accessory') progressAccessory(swapEx, slot, swapped);
+    if (swapEx && slot.progressionStyle === 'repsFirst') progressAccessory(swapEx, slot, swapped);
   }
 
   // 3. Summary: one line per slot trained today (swapped-in exercises use their own state).

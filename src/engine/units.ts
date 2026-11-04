@@ -20,8 +20,8 @@ export function convertWeight(value: number, from: Unit, to: Unit): number {
 }
 
 export const DEFAULT_INCREMENTS: Record<Unit, Record<Equipment, number>> = {
-  kg: { barbell: 2.5, dumbbell: 2, machine: 2.5, cable: 2.5, bodyweight: 2.5 },
-  lb: { barbell: 5, dumbbell: 5, machine: 5, cable: 5, bodyweight: 5 },
+  kg: { barbell: 2.5, dumbbell: 2, machine: 2.5, cable: 2.5, bodyweight: 2.5, kettlebell: 4, band: 2.5 },
+  lb: { barbell: 5, dumbbell: 5, machine: 5, cable: 5, bodyweight: 5, kettlebell: 10, band: 5 },
 };
 
 export const BAR_WEIGHT: Record<Unit, number> = { kg: 20, lb: 45 };

@@ -1,4 +1,4 @@
-import type { ExerciseDef, ExerciseState, SlotDef, SlotState } from '../engine';
+import type { ExerciseDef, ExerciseState, Program, SlotDef, SlotState } from '../engine';
 import { finishSessionState, seedExercise, type TimeAgo } from '../engine';
 import type { LiftDB } from './db';
 import { saveProgramDay } from './settingsService';
@@ -6,8 +6,14 @@ import type { ProgramDayRow, SessionRow, SetRow, SettingsRow } from './schema';
 
 export interface Snapshot {
   settings: SettingsRow;
+  /** Every exercise, hidden ones included (history still resolves them). */
   exercises: Record<string, ExerciseDef>;
+  programs: Program[];
+  activeProgram: Program | null;
+  /** Every day of every program: session history and deloads reach slots outside the active program. */
   days: ProgramDayRow[];
+  /** The active program's days in rotation order. */
+  activeDays: ProgramDayRow[];
   exerciseStates: Record<string, ExerciseState>;
   slotStates: Record<string, SlotState>;
 }
@@ -15,30 +21,40 @@ export interface Snapshot {
 const byId = <T,>(rows: T[], key: (r: T) => string) => Object.fromEntries(rows.map((r) => [key(r), r]));
 
 export async function loadSnapshot(db: LiftDB): Promise<Snapshot> {
-  const [settings, exercises, days, exerciseStates, slotStates] = await Promise.all([
+  const [settings, exercises, programs, days, exerciseStates, slotStates] = await Promise.all([
     db.settings.get('main'),
     db.exercises.toArray(),
+    db.programs.orderBy('createdAt').toArray(),
     db.programDays.orderBy('order').toArray(),
     db.exerciseState.toArray(),
     db.slotState.toArray(),
   ]);
+  const activeProgram = programs.find((p) => p.id === settings?.activeProgramId) ?? null;
   return {
     settings: settings!,
     exercises: byId(exercises, (e) => e.id),
+    programs,
+    activeProgram,
     days,
+    activeDays: activeProgram ? days.filter((d) => d.programId === activeProgram.id) : [],
     exerciseStates: byId(exerciseStates, (s) => s.exerciseId),
     slotStates: byId(slotStates, (s) => s.slotId),
   };
 }
 
-/** The day after the most recently finished session (early-ended sessions count); A when none. */
-export async function nextDayId(db: LiftDB): Promise<string> {
-  const days = await db.programDays.orderBy('order').toArray();
-  if (!days.length) throw new Error('No program days');
+/**
+ * The active program's day after the most recently finished session (early-ended sessions count); its first
+ * day when nothing has been finished in it yet. Null when there's no active program or it has no days.
+ */
+export async function nextDayId(db: LiftDB): Promise<string | null> {
+  const activeId = (await db.settings.get('main'))?.activeProgramId;
+  if (!activeId) return null;
+  const days = await db.programDays.where('programId').equals(activeId).sortBy('order');
+  if (!days.length) return null;
   const finished = (await db.sessions.where('finishedAt').above(0).sortBy('finishedAt')).pop();
   if (!finished) return days[0].id;
   const idx = days.findIndex((d) => d.id === finished.dayId);
-  return days[(idx + 1) % days.length].id;
+  return days[(idx + 1) % days.length].id; // a last session from another program (idx −1) starts this one at day 1
 }
 
 export async function activeSession(db: LiftDB): Promise<SessionRow | undefined> {
@@ -49,9 +65,12 @@ export async function activeSession(db: LiftDB): Promise<SessionRow | undefined>
 export async function startSession(db: LiftDB, dayId?: string): Promise<SessionRow> {
   const existing = await activeSession(db);
   if (existing) return existing;
+  const target = dayId ?? (await nextDayId(db));
+  if (!target) throw new Error('There is no program day to start.');
   const row: SessionRow = {
     id: crypto.randomUUID(),
-    dayId: dayId ?? (await nextDayId(db)),
+    dayId: target,
+    dayName: (await db.programDays.get(target))?.name,
     startedAt: Date.now(),
     swaps: [],
   };
