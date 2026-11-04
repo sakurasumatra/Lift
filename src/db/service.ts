@@ -1,7 +1,7 @@
 import type { ExerciseDef, ExerciseState, Program, SlotDef, SlotState } from '../engine';
 import { finishSessionState, seedExercise, type TimeAgo } from '../engine';
 import type { LiftDB } from './db';
-import { saveProgramDay } from './settingsService';
+import { rebaseBodyweightPrescriptions, saveProgramDay } from './settingsService';
 import type { ProgramDayRow, SessionRow, SetRow, SettingsRow } from './schema';
 
 export interface Snapshot {
@@ -158,9 +158,11 @@ export async function applyOnboarding(
   db: LiftDB,
   input: { bodyweight: number | null; returningAfterBreak: boolean; entries: SeedEntry[] },
 ): Promise<number> {
-  return db.transaction('rw', db.settings, db.exercises, db.exerciseState, async () => {
+  return db.transaction('rw', db.settings, db.exercises, db.exerciseState, db.programDays, db.slotState, async () => {
     const settings = (await db.settings.get('main'))!;
     const bodyweight = input.bodyweight ?? settings.bodyweight ?? 0;
+    // A changed bodyweight moves existing pull-up prescriptions first; new seeds below already use the new value.
+    await rebaseBodyweightPrescriptions(db, settings.bodyweight, input.bodyweight ?? settings.bodyweight);
     const now = Date.now();
     let seeded = 0;
     for (const e of input.entries) {

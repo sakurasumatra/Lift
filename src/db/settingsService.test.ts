@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { LiftDB, ensureSeeded } from './db';
 import { exportData, importData, validateBackup } from './backup';
 import { applyOnboarding, finishSession, loadSnapshot, saveSet, startSession } from './service';
-import { resetAllData, saveProgramDay, setFamilyRatio, setIncrement, switchUnits, updateExercise } from './settingsService';
+import { resetAllData, saveProgramDay, setBodyweight, setFamilyRatio, setIncrement, switchUnits, updateExercise } from './settingsService';
 
 let db: LiftDB;
 beforeEach(async () => {
@@ -118,6 +118,61 @@ describe('unit switching: review fixes', () => {
     expect(after.items[0].nextWeight! % 5).toBe(0);
     expect(after.items[0].nextWeight!).toBeCloseTo(before.items[0].nextWeight! * 2.20462, -1);
     expect((await db.slotState.get('A1'))!.lastWorkingWeight).toBeCloseTo(220.5, 1);
+  });
+
+  it('never re-rounds a barbell prescription below the empty bar (20 kg → 45 lb, not 40 lb)', async () => {
+    // 20 kg = 44.09 lb, which rounds DOWN to 40 lb: lighter than the 45 lb bar.
+    await db.slotState.put({ slotId: 'C2', lastPrescribedWeight: 20, nextWeight: 20, reason: 'x', prescriptionKind: 'normal' });
+    await db.exerciseState.put({ exerciseId: 'overhead-press', e1rm: 26, missCount: 0, accessoryFailCount: 0, updatedAt: 1, sessionCount: 1, lastWeight: 20, nextWeight: 20 });
+    // Dumbbells and machines still floor at 0 and bodyweight assistance keeps its sign.
+    await db.slotState.put({ slotId: 'C3', lastPrescribedWeight: -20, nextWeight: -20, reason: 'x', prescriptionKind: 'normal' });
+    await switchUnits(db, 'lb');
+    expect(await db.slotState.get('C2')).toMatchObject({ nextWeight: 45, lastPrescribedWeight: 45 });
+    expect(await db.exerciseState.get('overhead-press')).toMatchObject({ lastWeight: 45, nextWeight: 45 });
+    expect((await db.slotState.get('C3'))!.nextWeight).toBe(-45); // −44.09 rounds down to −45
+    // and back: 45 lb = 20.4 kg → 20 kg, the bar again
+    await switchUnits(db, 'kg');
+    expect((await db.slotState.get('C2'))!.nextWeight).toBe(20);
+  });
+});
+
+describe('bodyweight changes', () => {
+  async function pullUpState() {
+    await applyOnboarding(db, { bodyweight: 80, returningAfterBreak: false, entries: [] });
+    await db.slotState.put({ slotId: 'C3', lastPrescribedWeight: -20, lastWorkingWeight: -20, nextWeight: -20, reason: 'r', prescriptionKind: 'normal' });
+    await db.exerciseState.put({ exerciseId: 'pull-up', e1rm: 78, missCount: 0, accessoryFailCount: 0, updatedAt: 1, sessionCount: 2, lastWeight: -20, nextWeight: -17.5 });
+    await db.slotState.put({ slotId: 'A1', lastPrescribedWeight: 100, nextWeight: 102.5, reason: 'r', prescriptionKind: 'normal' });
+  }
+
+  it('keeps the total load of pull-ups the same: 2 kg heavier → 2 kg more assistance', async () => {
+    await pullUpState();
+    await setBodyweight(db, 82);
+    expect((await db.settings.get('main'))!.bodyweight).toBe(82);
+    expect(await db.slotState.get('C3')).toMatchObject({ nextWeight: -22.5, lastPrescribedWeight: -22.5, lastWorkingWeight: -22 });
+    expect((await db.slotState.get('C3'))!.reason).toContain('bodyweight');
+    expect(await db.exerciseState.get('pull-up')).toMatchObject({ lastWeight: -22.5, nextWeight: -20, e1rm: 78 }); // e1RM is total load: unchanged
+    expect(await db.slotState.get('A1')).toMatchObject({ nextWeight: 102.5, reason: 'r' }); // barbell lifts untouched
+  });
+
+  it('lighter → less assistance, rounded down to the increment', async () => {
+    await pullUpState();
+    await setBodyweight(db, 77.5);
+    expect((await db.slotState.get('C3'))!.nextWeight).toBe(-17.5);
+    await setBodyweight(db, 76.9); // −17.5 + 0.6 = −16.9 → rounds down to −17.5
+    expect((await db.slotState.get('C3'))!.nextWeight).toBe(-17.5);
+  });
+
+  it('setting it for the first time, or clearing it, changes nothing else', async () => {
+    await db.slotState.put({ slotId: 'C3', lastPrescribedWeight: -20, nextWeight: -20, reason: 'r', prescriptionKind: 'normal' });
+    await setBodyweight(db, 80);
+    await setBodyweight(db, null);
+    expect(await db.slotState.get('C3')).toMatchObject({ nextWeight: -20, reason: 'r' });
+  });
+
+  it('re-entering onboarding with a new bodyweight shifts pull-up prescriptions too', async () => {
+    await pullUpState();
+    await applyOnboarding(db, { bodyweight: 85, returningAfterBreak: false, entries: [] });
+    expect((await db.slotState.get('C3'))!.nextWeight).toBe(-25);
   });
 });
 

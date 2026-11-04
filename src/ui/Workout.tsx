@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../db/db';
 import { discardSession, finishSession, saveSet, setRowId } from '../db/service';
+import { setBodyweight } from '../db/settingsService';
 import type { Snapshot } from '../db/service';
 import type { SessionRow, SetRow } from '../db/schema';
 import {
@@ -8,7 +9,7 @@ import {
 } from '../engine';
 import { CUES } from '../data/cues';
 import { ExerciseImage, KindBadge, ReturnBanner, RpePicker, Sheet, Stepper } from './components';
-import { RestTimer, loadRest, saveRest, type RestState } from './RestTimer';
+import { RestTimer, loadRest, primeAudio, saveRest, type RestState } from './RestTimer';
 import { plannedSets, setDefaults, slotPrescription } from './prescriptions';
 import { useSessionSets } from './hooks';
 import { SwapSheet } from './SwapSheet';
@@ -228,7 +229,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
         <div className="actions">
           <button className="tilebtn" onClick={() => setSheet('info')}><span>ⓘ</span>Info</button>
           <button className="tilebtn" disabled={!swapAllowed} style={{ opacity: swapAllowed ? 1 : 0.45 }} onClick={() => setSheet('swap')}><span>⇄</span>Replace</button>
-          <button className="btn primary" onClick={() => setPendingRpe({ weight, reps })}>{logged ? 'Update' : 'Done'}</button>
+          <button className="btn primary" onClick={() => { if (settings.timerSound) primeAudio(); setPendingRpe({ weight, reps }); }}>{logged ? 'Update' : 'Done'}</button>
         </div>
 
         {allDone && !logged ? null : nextLine && <div className="nextup"><span>Next up</span><b>{nextLine}</b></div>}
@@ -295,7 +296,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
           <h2>What’s your bodyweight?</h2>
           <p className="muted" style={{ margin: 0 }}>{ex.name} uses your bodyweight in its maths (assistance counts as negative added load).</p>
           <input className="num" inputMode="decimal" autoFocus placeholder={`Bodyweight in ${unit}`} value={bwInput} onChange={(e) => setBwInput(e.target.value)} />
-          <button className="btn primary block" disabled={!(parseFloat(bwInput) > 0)} onClick={() => db.settings.update('main', { bodyweight: parseFloat(bwInput.replace(',', '.')) })}>Save</button>
+          <button className="btn primary block" disabled={!(parseFloat(bwInput) > 0)} onClick={() => setBodyweight(db, parseFloat(bwInput.replace(',', '.')))}>Save</button>
           <button className="btn secondary block" onClick={() => { setSheet(null); db.sessions.update(session.id, { skippedSlotIds: [...skipped, slot.slotId] }); }}>Skip this exercise</button>
         </Sheet>
       )}

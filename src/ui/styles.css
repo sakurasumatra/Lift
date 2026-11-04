@@ -73,6 +73,7 @@ h1, h2, h3 { margin: 0; font-weight: 900; letter-spacing: -.02em; }
 .rest .t { position: relative; color: #fff; font-weight: 900; font-size: 24px; text-shadow: 0 1px 3px rgba(0,0,0,.3); }
 .rest .hint { position: absolute; right: 12px; font-size: 11px; color: #fff; opacity: .85; z-index: 1; font-weight: 700; }
 .toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 12px 18px; border-radius: 14px; font-weight: 800; z-index: 30; box-shadow: 0 8px 24px rgba(0,0,0,.25); max-width: 92vw; text-align: center; }
+.update-prompt { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 10px; background: var(--card); color: var(--text); border: 2px solid var(--accent); border-radius: 14px; padding: 8px 8px 8px 14px; font-weight: 800; box-shadow: 0 8px 24px rgba(0,0,0,.25); max-width: 92vw; white-space: nowrap; }
 .explainer { border: 2px solid var(--accent); border-radius: 14px; padding: 12px 14px; background: color-mix(in srgb, var(--accent) 6%, var(--card)); font-size: 14px; line-height: 1.4; }
 
 /* sheets */

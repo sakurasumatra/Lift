@@ -157,6 +157,9 @@ describe('seeding and calibration', () => {
     expect(p.kind).toBe('calibration');
     expect(p.weight).toBeGreaterThan(0);
     expect(seedExercise(lib['back-squat'], 100, 5, '1-3', 80, 5).calibrateFirst).toBe(false);
+    expect(seedExercise(lib['back-squat'], 100, 5, 'under-1', 80, 5).calibrateFirst).toBe(false);
+    // "3+ months" starts at the 3–6 month bucket
+    expect(seedExercise(lib['back-squat'], 100, 5, '3-6', 80, 5).calibrateFirst).toBe(true);
   });
   it('no seed and no related data → calibration with no weight', () => {
     const p = prescribe({ exercise: lib['back-squat'], slot: slotById('A1'), familyMembers: [], bodyweight: 80, returnPhase: ret(0), unit: 'kg' });
