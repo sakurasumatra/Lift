@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { LiftDB, ensureSeeded } from './db';
-import { finishSession, loadSnapshot, nextDayId, saveSet, startSession } from './service';
+import { applyOnboarding, finishSession, loadSnapshot, nextDayId, saveSet, startSession } from './service';
 
 let db: LiftDB;
 beforeEach(async () => {
@@ -55,5 +55,34 @@ describe('sessions', () => {
     const rows = await db.sets.toArray();
     expect(rows).toHaveLength(1);
     expect(rows[0].reps).toBe(8);
+  });
+});
+
+describe('onboarding', () => {
+  it('seeds e1RM with detraining factor, accessory start weights and a calibration flag for 3+ month gaps', async () => {
+    const n = await applyOnboarding(db, {
+      bodyweight: 80,
+      returningAfterBreak: true,
+      entries: [
+        { exerciseId: 'back-squat', weight: 100, reps: 5, ago: '6-plus' },
+        { exerciseId: 'lat-pulldown', weight: 60, reps: 10, ago: '1-3' },
+        { exerciseId: 'bench-press', weight: 0, reps: 0, ago: '1-3' }, // ignored: no reps
+      ],
+    });
+    expect(n).toBe(2);
+    const snap = await loadSnapshot(db);
+    expect(snap.exerciseStates['back-squat'].e1rm).toBeCloseTo(100 * (1 + 6 / 30) * 0.85, 6);
+    expect(snap.exerciseStates['back-squat'].calibrateFirst).toBe(true);
+    expect(snap.exerciseStates['lat-pulldown'].lastWeight).toBe(55); // 60 × 0.95 = 57 → rounded down to 55
+    expect(snap.exerciseStates['bench-press']).toBeUndefined();
+    expect(snap.settings.bodyweight).toBe(80);
+    expect(snap.settings.onboarded).toBe(true);
+    expect(snap.settings.returnPhase.active).toBe(true);
+  });
+  it('does not overwrite an exercise that already has logged sessions', async () => {
+    await db.exerciseState.put({ exerciseId: 'back-squat', e1rm: 150, missCount: 0, accessoryFailCount: 0, updatedAt: 1, sessionCount: 2 });
+    await applyOnboarding(db, { bodyweight: null, returningAfterBreak: false, entries: [{ exerciseId: 'back-squat', weight: 50, reps: 5, ago: '1-3' }] });
+    expect((await loadSnapshot(db)).exerciseStates['back-squat'].e1rm).toBe(150);
+    expect((await loadSnapshot(db)).settings.returnPhase.active).toBe(false);
   });
 });

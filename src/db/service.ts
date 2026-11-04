@@ -1,5 +1,5 @@
 import type { ExerciseDef, ExerciseState, SlotDef, SlotState } from '../engine';
-import { finishSessionState } from '../engine';
+import { finishSessionState, seedExercise, type TimeAgo } from '../engine';
 import type { LiftDB } from './db';
 import type { ProgramDayRow, SessionRow, SetRow, SettingsRow } from './schema';
 
@@ -113,4 +113,42 @@ export async function discardSession(db: LiftDB, sessionId: string): Promise<voi
     await db.sets.where('sessionId').equals(sessionId).delete();
     await db.sessions.delete(sessionId);
   });
+}
+
+export interface SeedEntry { exerciseId: string; weight: number; reps: number; ago: TimeAgo; }
+
+/**
+ * Onboarding: store the bodyweight, the return-phase choice and a seeded exerciseState per remembered lift.
+ * Exercises that already have logged sessions are left alone.
+ */
+export async function applyOnboarding(
+  db: LiftDB,
+  input: { bodyweight: number | null; returningAfterBreak: boolean; entries: SeedEntry[] },
+): Promise<number> {
+  return db.transaction('rw', db.settings, db.exercises, db.exerciseState, async () => {
+    const settings = (await db.settings.get('main'))!;
+    const bodyweight = input.bodyweight ?? settings.bodyweight ?? 0;
+    const now = Date.now();
+    let seeded = 0;
+    for (const e of input.entries) {
+      const ex = await db.exercises.get(e.exerciseId);
+      if (!ex || !(e.reps > 0)) continue;
+      const existing = await db.exerciseState.get(e.exerciseId);
+      if (existing && existing.sessionCount > 0) continue;
+      await db.exerciseState.put(seedExercise(ex, e.weight, e.reps, e.ago, bodyweight, now));
+      seeded++;
+    }
+    await db.settings.update('main', {
+      bodyweight: input.bodyweight ?? settings.bodyweight,
+      onboarded: true,
+      returnPhase: input.returningAfterBreak
+        ? settings.returnPhase.sessionsCompleted === 0 ? { active: true, sessionsCompleted: 0 } : settings.returnPhase
+        : { ...settings.returnPhase, active: false },
+    });
+    return seeded;
+  });
+}
+
+export async function skipOnboarding(db: LiftDB): Promise<void> {
+  await db.settings.update('main', { onboarded: true });
 }

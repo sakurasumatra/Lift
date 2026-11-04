@@ -8,7 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { KindBadge, ReturnBanner } from './components';
 import { plannedSets, slotPrescription } from './prescriptions';
 
-export function Home({ snap, active, onStart, onSettings }: { snap: Snapshot; active: SessionRow | null; onStart: () => void; onSettings: () => void }) {
+export function Home({ snap, active, onStart }: { snap: Snapshot; active: SessionRow | null; onStart: () => void }) {
   const info = useLiveQuery(async () => {
     const finished = (await db.sessions.where('finishedAt').above(0).sortBy('finishedAt')).pop();
     return { next: await nextDayId(db), last: finished?.finishedAt ?? null };
@@ -21,10 +21,7 @@ export function Home({ snap, active, onStart, onSettings }: { snap: Snapshot; ac
 
   return (
     <div className="page">
-      <div className="row spread">
-        <h1 className="big-title">Lift</h1>
-        <button className="icon-btn" aria-label="Settings" onClick={onSettings}>⚙</button>
-      </div>
+      <h1 className="big-title">Lift</h1>
       <ReturnBanner rp={snap.settings.returnPhase} />
       <div className="card">
         <div className="row" style={{ marginBottom: 8 }}>

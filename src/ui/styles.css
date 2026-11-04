@@ -101,3 +101,8 @@ h1, h2, h3 { margin: 0; font-weight: 900; letter-spacing: -.02em; }
 input.text, input.num { width: 100%; font: inherit; font-size: 20px; font-weight: 700; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
 label.switch { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-weight: 700; min-height: 48px; }
 label.switch input { width: 26px; height: 26px; accent-color: var(--accent); }
+.tabs { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); margin-top: auto; }
+.tabs button { padding: 10px 0 8px; font-size: 12px; font-weight: 700; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; }
+.tabs button span { font-size: 20px; }
+.tabs button.on { color: var(--accent); }
+select.num { appearance: auto; }

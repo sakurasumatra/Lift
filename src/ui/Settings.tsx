@@ -40,6 +40,9 @@ export function Settings({ snap, onBack }: { snap: Snapshot; onBack: () => void 
         )}
       </div>
       <div className="card">
+        <button className="btn secondary block" onClick={() => update({ onboarded: false })}>Enter remembered lifts again</button>
+      </div>
+      <div className="card">
         <button className="btn secondary block" onClick={() => setAbout(!about)}>About</button>
         {about && (
           <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.5 }}>

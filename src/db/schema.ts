@@ -55,6 +55,8 @@ export interface SettingsRow {
   keepScreenAwake: boolean;
   timerSound: boolean;
   returnPhase: ReturnPhase;
+  /** Set once the starting-weights onboarding was completed or skipped. */
+  onboarded?: boolean;
 }
 
 export type { ExerciseDef, ExerciseState, SlotState };
