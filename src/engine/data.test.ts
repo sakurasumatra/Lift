@@ -11,17 +11,17 @@ describe('seed data integrity', () => {
     for (const day of program) for (const s of day.slots) {
       const ex = byId.get(s.exerciseId);
       expect(ex, s.exerciseId).toBeDefined();
-      expect(ex!.family).toBeTruthy();
+      expect(ex!.family).toBeTruthy(); // every template exercise belongs to a family
     }
   });
   it('every family has exactly one anchor with ratio 1', () => {
     const fams = new Map<string, number[]>();
-    for (const e of lib) fams.set(e.family, [...(fams.get(e.family) ?? []), e.familyRatio]);
+    for (const e of lib) if (e.family) fams.set(e.family, [...(fams.get(e.family) ?? []), e.familyRatio!]);
     expect(fams.size).toBe(11);
     for (const [, ratios] of fams) expect(ratios.filter((r) => r === 1).length).toBeGreaterThanOrEqual(1);
   });
   it('matches the program table: 3 days, A/B/C, slot counts', () => {
-    expect(program.map((d) => [d.label, d.slots.length])).toEqual([['A', 5], ['B', 5], ['C', 5]]);
+    expect(program.map((d) => [d.name, d.slots.length])).toEqual([['Day A', 5], ['Day B', 5], ['Day C', 5]]);
     expect(program[0].slots[0]).toMatchObject({ exerciseId: 'back-squat', sets: 4, repMin: 4, repMax: 6, group: 1 });
     expect(program[1].slots[0]).toMatchObject({ exerciseId: 'bench-press', sets: 4, repMin: 4, repMax: 6 });
     expect(program[0].slots[1]).toMatchObject({ exerciseId: 'bench-press', sets: 3, repMin: 6, repMax: 8 });

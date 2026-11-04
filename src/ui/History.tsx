@@ -1,9 +1,13 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
+import { deleteCustomExercise, setExerciseHidden } from '../db/libraryService';
 import type { Snapshot } from '../db/service';
-import { e1rmSeries, bestSets, formatNumber } from '../engine';
+import { e1rmSeries, bestSets, formatNumber, EQUIPMENT_LABELS, MUSCLE_LABELS, FAMILY_LABELS } from '../engine';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid } from 'recharts';
 import { ExerciseImage } from './components';
+import { dayBadge, sessionDayName } from './days';
+import { ExerciseForm } from './ExerciseForm';
 
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 
@@ -16,7 +20,7 @@ export function HistoryList({ snap, onOpen }: { snap: Snapshot; onOpen: (session
       {sessions?.map((s) => (
         <button className="card row spread" style={{ textAlign: 'left' }} key={s.id} onClick={() => onOpen(s.id)}>
           <div className="row">
-            <div className="day-badge" style={{ width: 44, height: 44, fontSize: 24 }}>{s.dayId}</div>
+            <div className="day-badge" style={{ width: 44, height: 44, fontSize: 24 }}>{dayBadge(sessionDayName(snap, s))}</div>
             <div>
               <b>{fmtDate(s.finishedAt!)}</b>
               <div className="muted" style={{ fontSize: 13 }}>{s.summary?.totalSets ?? 0} sets{s.endedEarly ? ' · ended early' : ''}</div>
@@ -41,7 +45,7 @@ export function SessionDetail({ snap, sessionId, onBack, onExercise }: { snap: S
   for (const s of data.sets) if (!order.includes(s.exerciseId)) order.push(s.exerciseId);
   return (
     <div className="page">
-      <div className="row"><button className="icon-btn" aria-label="Back" onClick={onBack}>←</button><h1>Day {data.session.dayId}</h1></div>
+      <div className="row"><button className="icon-btn" aria-label="Back" onClick={onBack}>←</button><h1>{sessionDayName(snap, data.session)}</h1></div>
       <div className="muted">{data.session.finishedAt ? fmtDate(data.session.finishedAt) : 'In progress'}{data.session.endedEarly ? ' · ended early' : ''}</div>
       {data.session.summary?.stronger.map((c) => (
         <div className="card strong row spread" key={c.exerciseId}>
@@ -65,35 +69,10 @@ export function SessionDetail({ snap, sessionId, onBack, onExercise }: { snap: S
   );
 }
 
-export function ExerciseList({ snap, onOpen }: { snap: Snapshot; onOpen: (id: string) => void }) {
-  const list = Object.values(snap.exercises).filter((e) => snap.exerciseStates[e.id]).sort((a, b) => a.name.localeCompare(b.name));
-  const rest = Object.values(snap.exercises).filter((e) => !snap.exerciseStates[e.id]).sort((a, b) => a.name.localeCompare(b.name));
-  const unit = snap.settings.units;
-  return (
-    <div className="page">
-      <h1 className="big-title">Exercises</h1>
-      <div className="card">
-        {list.length === 0 && <div className="muted">Exercises you’ve trained appear here with their e1RM.</div>}
-        {list.map((e) => (
-          <button className="ex-row" style={{ width: '100%', textAlign: 'left' }} key={e.id} onClick={() => onOpen(e.id)}>
-            <span className="name">{e.name}</span><span className="w">{formatNumber(snap.exerciseStates[e.id].e1rm, 1)} {unit}</span>
-          </button>
-        ))}
-      </div>
-      {rest.length > 0 && (
-        <div className="card">
-          <div className="muted" style={{ marginBottom: 4 }}>No data yet</div>
-          {rest.map((e) => (
-            <button className="ex-row" style={{ width: '100%', textAlign: 'left' }} key={e.id} onClick={() => onOpen(e.id)}><span className="name">{e.name}</span><span className="muted">›</span></button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function ExerciseDetail({ snap, exerciseId, onBack }: { snap: Snapshot; exerciseId: string; onBack: () => void }) {
   const ex = snap.exercises[exerciseId];
+  const [editing, setEditing] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
   const state = snap.exerciseStates[exerciseId];
   const unit = snap.settings.units;
   const bw = snap.settings.bodyweight ?? 0;
@@ -103,12 +82,19 @@ export function ExerciseDetail({ snap, exerciseId, onBack }: { snap: Snapshot; e
     const at = new Map(sessions.filter(Boolean).map((s) => [s!.id, s!.finishedAt ?? s!.startedAt]));
     return sets.filter((s) => at.has(s.sessionId)).map((s) => ({ sessionId: s.sessionId, at: at.get(s.sessionId)!, weight: s.weight, reps: s.reps, rpe: s.rpe }));
   }, [exerciseId]) ?? [];
+  // A just-created exercise can be opened a moment before the live snapshot includes it.
+  if (!ex) return <div className="page"><div className="row"><button className="icon-btn" aria-label="Back" onClick={onBack}>←</button></div><div className="muted">Loading…</div></div>;
   const series = e1rmSeries(ex.equipment, hist, bw).map((p) => ({ date: new Date(p.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), e1rm: Math.round(p.e1rm * 10) / 10 }));
   const best = bestSets(ex.equipment, hist, bw, 5);
   return (
     <div className="page">
       <div className="row"><button className="icon-btn" aria-label="Back" onClick={onBack}>←</button><h1>{ex.name}</h1></div>
       <ExerciseImage exercise={ex} />
+      <div className="muted">
+        {EQUIPMENT_LABELS[ex.equipment]} · {MUSCLE_LABELS[ex.primaryMuscle]}
+        {ex.family ? ` · ${FAMILY_LABELS[ex.family]} family${ex.familyRatio != null ? ` (×${ex.familyRatio})` : ''}` : ' · no movement family (starts with a calibration set)'}
+        {ex.hidden ? ' · hidden' : ''}
+      </div>
       <div className="card">
         <div className="muted">Current estimated one-rep max</div>
         <div style={{ fontSize: 44, fontWeight: 900 }}>{state ? `${formatNumber(state.e1rm, 1)} ${unit}` : '—'}</div>
@@ -140,6 +126,21 @@ export function ExerciseDetail({ snap, exerciseId, onBack }: { snap: Snapshot; e
           <div className="ex-row" key={i}><b>{formatNumber(s.weight)} {unit} × {s.reps}</b><span className="muted">e1RM {formatNumber(s.e1rm, 1)}</span></div>
         ))}
       </div>
+      {msg && <div className="explainer" role="status">{msg}</div>}
+      {ex.isCustom && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <h2>Custom exercise</h2>
+          <button className="btn secondary block" onClick={() => setEditing(true)}>Edit</button>
+          <button className="btn secondary block" onClick={() => setExerciseHidden(db, ex.id, !ex.hidden)}>{ex.hidden ? 'Show in library' : 'Hide from library'}</button>
+          <button className="btn secondary block" onClick={async () => {
+            if (!window.confirm(`Delete ${ex.name}?`)) return;
+            const r = await deleteCustomExercise(db, ex.id);
+            if (r === 'deleted') onBack();
+            else setMsg(r === 'has-sets' ? 'It has logged sets, so it can’t be deleted. Hide it instead to keep your history.' : r === 'in-program' ? 'A program still uses it. Remove it from the program first, or hide it.' : 'This exercise can’t be deleted.');
+          }}>Delete</button>
+        </div>
+      )}
+      {editing && <ExerciseForm exercise={ex} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} />}
     </div>
   );
 }

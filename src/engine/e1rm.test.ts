@@ -74,7 +74,7 @@ describe('rounding', () => {
     expect(floorToIncrement(-5, 2.5)).toBe(-5);
   });
   it('default increments per spec', () => {
-    expect(DEFAULT_INCREMENTS.kg).toEqual({ barbell: 2.5, dumbbell: 2, machine: 2.5, cable: 2.5, bodyweight: 2.5 });
+    expect(DEFAULT_INCREMENTS.kg).toEqual({ barbell: 2.5, dumbbell: 2, machine: 2.5, cable: 2.5, bodyweight: 2.5, kettlebell: 4, band: 2.5 });
     expect(DEFAULT_INCREMENTS.lb.dumbbell).toBe(5);
   });
   it('converts units', () => {

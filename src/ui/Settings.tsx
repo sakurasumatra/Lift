@@ -7,21 +7,22 @@ import type { Equipment, Unit } from '../engine';
 import imageSources from '../data/imageSources.json';
 import { NumField } from './fields';
 import { FamilyRatios } from './FamilyRatios';
-import { ProgramEditor } from './ProgramEditor';
+import { ProgramManager } from './ProgramManager';
 
 const EQUIPMENT: [Equipment, string][] = [
   ['barbell', 'Barbell (total load)'], ['dumbbell', 'Dumbbell (each)'], ['machine', 'Machine'], ['cable', 'Cable'], ['bodyweight', 'Bodyweight (added load)'],
+  ['kettlebell', 'Kettlebell'], ['band', 'Band (approx. load)'],
 ];
 
-export function Settings({ snap, onBack }: { snap: Snapshot; onBack: () => void }) {
+export function Settings({ snap, onBack, initialSub }: { snap: Snapshot; onBack: () => void; initialSub?: 'program' }) {
   const s = snap.settings;
-  const [sub, setSub] = useState<null | 'program' | 'ratios'>(null);
+  const [sub, setSub] = useState<null | 'program' | 'ratios'>(initialSub ?? null);
   const [about, setAbout] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const update = (patch: Partial<typeof s>) => db.settings.update('main', patch);
 
-  if (sub === 'program') return <ProgramEditor snap={snap} onBack={() => setSub(null)} />;
+  if (sub === 'program') return <ProgramManager snap={snap} onBack={() => setSub(null)} />;
   if (sub === 'ratios') return <FamilyRatios snap={snap} onBack={() => setSub(null)} />;
 
   async function doExport() {
@@ -91,7 +92,7 @@ export function Settings({ snap, onBack }: { snap: Snapshot; onBack: () => void 
       </div>
 
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <button className="btn secondary block" onClick={() => setSub('program')}>Edit program</button>
+        <button className="btn secondary block" onClick={() => setSub('program')}>Programs{snap.activeProgram ? ` · ${snap.activeProgram.name}` : ''}</button>
         <button className="btn secondary block" onClick={() => setSub('ratios')}>Family ratios</button>
         <button className="btn secondary block" onClick={() => update({ onboarded: false })}>Enter remembered lifts again</button>
       </div>

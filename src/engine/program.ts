@@ -1,4 +1,4 @@
-import type { SlotDef } from './types';
+import type { ProgressionStyle, SlotDef } from './types';
 
 /**
  * Pure helpers for editing a day's slot list. Slots in consecutive positions that share a group
@@ -41,7 +41,16 @@ export function removeSlot(slots: SlotDef[], i: number): SlotDef[] {
   return renumberGroups(slots.filter((_, k) => k !== i));
 }
 
-export function updateSlot(slots: SlotDef[], i: number, patch: Partial<Pick<SlotDef, 'exerciseId' | 'sets' | 'repMin' | 'repMax'>>): SlotDef[] {
+/** Move the slot at `from` so it ends up at index `to` (drag and drop). */
+export function moveSlotTo(slots: SlotDef[], from: number, to: number): SlotDef[] {
+  if (from === to || from < 0 || to < 0 || from >= slots.length || to >= slots.length) return slots;
+  const out = [...slots];
+  const [s] = out.splice(from, 1);
+  out.splice(to, 0, s);
+  return renumberGroups(out);
+}
+
+export function updateSlot(slots: SlotDef[], i: number, patch: Partial<Pick<SlotDef, 'exerciseId' | 'progressionStyle' | 'sets' | 'repMin' | 'repMax'>>): SlotDef[] {
   const next = { ...patch };
   if (next.sets != null) next.sets = Math.max(1, Math.round(next.sets));
   if (next.repMin != null) next.repMin = Math.max(1, Math.round(next.repMin));
@@ -53,14 +62,25 @@ export function updateSlot(slots: SlotDef[], i: number, patch: Partial<Pick<Slot
   return out;
 }
 
-export function newSlotId(dayId: string, slots: SlotDef[]): string {
-  const re = new RegExp(`^${dayId}(\\d+)$`);
-  const max = Math.max(0, ...slots.map((s) => Number(re.exec(s.slotId)?.[1] ?? 0)));
-  return `${dayId}${max + 1}`;
-}
+/** Sensible starting sets and rep range for a new slot of a given style. */
+export const SLOT_DEFAULTS: Record<ProgressionStyle, { sets: number; repMin: number; repMax: number }> = {
+  estimatedMax: { sets: 3, repMin: 5, repMax: 8 },
+  repsFirst: { sets: 3, repMin: 8, repMax: 12 },
+};
 
-/** Append a new straight-sets slot at the end of the day. */
-export function addSlot(dayId: string, slots: SlotDef[], exerciseId: string, template: { sets: number; repMin: number; repMax: number } = { sets: 3, repMin: 8, repMax: 12 }): SlotDef[] {
+/** Append a new straight-sets slot at the end of the day. The caller supplies a fresh, never-reused slotId. */
+export function addSlot(
+  slots: SlotDef[],
+  exerciseId: string,
+  opts: { slotId: string; progressionStyle: ProgressionStyle; sets?: number; repMin?: number; repMax?: number },
+): SlotDef[] {
+  const d = SLOT_DEFAULTS[opts.progressionStyle];
   const group = Math.max(0, ...slots.map((s) => s.group)) + 1;
-  return renumberGroups([...slots, { slotId: newSlotId(dayId, slots), exerciseId, group, ...template }]);
+  return renumberGroups([
+    ...slots,
+    {
+      slotId: opts.slotId, exerciseId, progressionStyle: opts.progressionStyle, group,
+      sets: opts.sets ?? d.sets, repMin: opts.repMin ?? d.repMin, repMax: opts.repMax ?? d.repMax,
+    },
+  ]);
 }

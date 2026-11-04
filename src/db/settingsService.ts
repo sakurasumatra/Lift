@@ -93,8 +93,8 @@ export async function setFamilyRatio(db: LiftDB, exerciseId: string, ratio: numb
   if (ratio > 0) await db.exercises.update(exerciseId, { familyRatio: ratio });
 }
 
-/** Edit an exercise's type/equipment (equipment change also applies that equipment's increment). */
-export async function updateExercise(db: LiftDB, id: string, patch: Partial<Pick<ExerciseDef, 'type' | 'equipment'>>): Promise<void> {
+/** Edit an exercise's equipment (the change also applies that equipment's increment). */
+export async function updateExercise(db: LiftDB, id: string, patch: Partial<Pick<ExerciseDef, 'equipment'>>): Promise<void> {
   const s = (await db.settings.get('main'))!;
   const next: Partial<ExerciseDef> = { ...patch };
   if (patch.equipment) next.increment = s.increments[patch.equipment];
@@ -103,7 +103,7 @@ export async function updateExercise(db: LiftDB, id: string, patch: Partial<Pick
 
 /**
  * Save a day's slots. Slots that were removed lose their slot state, and so do slots whose exercise
- * or rep range changed (a prescription for the old exercise or range doesn't fit the new one; the
+ * rep range or progression style changed (a prescription for the old exercise or range doesn't fit the new one; the
  * next one comes from the exercise's e1RM or last weight). Reordering, regrouping and set counts keep it.
  */
 export async function saveProgramDay(db: LiftDB, dayId: string, slots: SlotDef[]): Promise<void> {
@@ -113,7 +113,8 @@ export async function saveProgramDay(db: LiftDB, dayId: string, slots: SlotDef[]
     const stale = [...before.keys()].filter((id) => {
       const now = slots.find((s) => s.slotId === id);
       const was = before.get(id)!;
-      return !now || now.exerciseId !== was.exerciseId || now.repMin !== was.repMin || now.repMax !== was.repMax;
+      return !now || now.exerciseId !== was.exerciseId || now.repMin !== was.repMin || now.repMax !== was.repMax
+        || now.progressionStyle !== was.progressionStyle;
     });
     await db.slotState.bulkDelete(stale);
     await db.programDays.put({ ...day, slots });

@@ -1,6 +1,10 @@
 export type Unit = 'kg' | 'lb';
-export type Equipment = 'barbell' | 'dumbbell' | 'machine' | 'cable' | 'bodyweight';
-export type ExerciseType = 'main' | 'accessory';
+export type Equipment = 'barbell' | 'dumbbell' | 'machine' | 'cable' | 'bodyweight' | 'kettlebell' | 'band';
+/** Estimated max = the main-lift model (e1RM drives the weight). Reps first = double progression. */
+export type ProgressionStyle = 'estimatedMax' | 'repsFirst';
+export type MuscleGroup =
+  | 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'forearms' | 'quads' | 'hamstrings'
+  | 'glutes' | 'calves' | 'abs' | 'traps' | 'hips' | 'full-body';
 export type PrescriptionKind = 'normal' | 'calibration' | 'predicted' | 'deload';
 export type FamilyId =
   | 'horizontal-press'
@@ -18,23 +22,48 @@ export type FamilyId =
 export interface ExerciseDef {
   id: string;
   name: string;
-  type: ExerciseType;
   equipment: Equipment;
   /** Smallest weight step in the user's current unit. */
   increment: number;
-  family: FamilyId;
+  primaryMuscle: MuscleGroup;
+  /** Style a new slot starts with; each slot carries its own. */
+  defaultProgressionStyle: ProgressionStyle;
+  /** Movement family; without one the exercise can never be predicted (it starts with a calibration set). */
+  family?: FamilyId;
   /** Transfer ratio to the family anchor (anchor = 1). */
-  familyRatio: number;
+  familyRatio?: number;
+  isCustom?: boolean;
+  /** Hidden from the library and pickers; kept so history still resolves. */
+  hidden?: boolean;
+  /** Free Exercise DB id of the bundled image, if any. */
+  imageRef?: string;
   notes?: string;
 }
 
 export interface SlotDef {
   slotId: string;
   exerciseId: string;
+  progressionStyle: ProgressionStyle;
   group: number;
   sets: number;
   repMin: number;
   repMax: number;
+}
+
+export interface Program {
+  id: string;
+  name: string;
+  createdAt: number;
+  /** Started from (or migrated from) the built-in 3-day template. */
+  isTemplate: boolean;
+}
+
+export interface ProgramDay {
+  id: string;
+  programId: string;
+  name: string;
+  order: number;
+  slots: SlotDef[];
 }
 
 export interface ExerciseState {
@@ -123,3 +152,19 @@ export const FAMILY_LABELS: Record<FamilyId, string> = {
   curl: 'Curl',
   triceps: 'Triceps',
 };
+
+export const EQUIPMENT_LABELS: Record<Equipment, string> = {
+  barbell: 'Barbell', dumbbell: 'Dumbbell', machine: 'Machine', cable: 'Cable', bodyweight: 'Bodyweight', kettlebell: 'Kettlebell', band: 'Band',
+};
+export const EQUIPMENT_LIST = Object.keys(EQUIPMENT_LABELS) as Equipment[];
+
+export const MUSCLE_LABELS: Record<MuscleGroup, string> = {
+  chest: 'Chest', back: 'Back', shoulders: 'Shoulders', biceps: 'Biceps', triceps: 'Triceps', forearms: 'Forearms',
+  quads: 'Quads', hamstrings: 'Hamstrings', glutes: 'Glutes', calves: 'Calves', abs: 'Abs', traps: 'Traps', hips: 'Hips', 'full-body': 'Full body',
+};
+export const MUSCLE_LIST = Object.keys(MUSCLE_LABELS) as MuscleGroup[];
+
+export const PROGRESSION_LABELS: Record<ProgressionStyle, string> = { estimatedMax: 'Estimated max', repsFirst: 'Reps first' };
+
+/** True when the slot's weight comes from the e1RM model (a "main lift"). */
+export const isMaxStyle = (slot: { progressionStyle: ProgressionStyle }): boolean => slot.progressionStyle === 'estimatedMax';

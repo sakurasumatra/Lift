@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../db/db';
-import { discardSession, finishSession, makeSwapPermanent, saveSet, setRowId } from '../db/service';
+import { discardSession, finishSession, saveSet, setRowId } from '../db/service';
 import type { Snapshot } from '../db/service';
 import type { SessionRow, SetRow } from '../db/schema';
 import {
-  BAR_WEIGHT, buildQueue, checkGettingStronger, explainerFor, formatNumber, plateBreakdown, targetsFor, type SlotDef,
+  BAR_WEIGHT, buildQueue, checkGettingStronger, explainerFor, formatNumber, isMaxStyle, plateBreakdown, targetsFor, type SlotDef,
 } from '../engine';
 import { CUES } from '../data/cues';
 import { ExerciseImage, KindBadge, ReturnBanner, RpePicker, Sheet, Stepper } from './components';
 import { RestTimer, loadRest, saveRest, type RestState } from './RestTimer';
 import { plannedSets, setDefaults, slotPrescription } from './prescriptions';
 import { useSessionSets } from './hooks';
+import { SwapSheet } from './SwapSheet';
 
 interface Props { snap: Snapshot; session: SessionRow; onExit: () => void; onFinished: (sessionId: string) => void; }
 type SheetName = null | 'info' | 'swap' | 'explain' | 'reorder' | 'menu';
@@ -58,10 +59,9 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
   const queue = useMemo(() => {
     const slots = day.slots
       .map((slot) => {
-        const exId = exerciseOf(slot);
         const logged = sets.filter((s) => s.slotId === slot.slotId).length;
-        const n = skipped.includes(slot.slotId) ? logged : plannedSets(snap, slot, exId);
-        return { slotId: slot.slotId, group: slot.group, sets: n, isMain: exercises[exId].type === 'main' };
+        const n = skipped.includes(slot.slotId) ? logged : plannedSets(snap, slot);
+        return { slotId: slot.slotId, group: slot.group, sets: n, isMain: isMaxStyle(slot) };
       })
       .filter((s) => s.sets > 0);
     return buildQueue(slots, settings.restTimes, session.groupOrder);
@@ -87,7 +87,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
   const exId = exerciseOf(slot);
   const ex = exercises[exId];
   const rx = slotPrescription(snap, slot, exId);
-  const targets = targetsFor(ex, slot, settings.returnPhase);
+  const targets = targetsFor(slot, settings.returnPhase);
   const logged = loggedBy.get(`${slot.slotId}:${item.setIndex}`);
   const slotSets = queue.filter((q) => q.slotId === slot.slotId);
   const grouped = day.slots.filter((s) => s.group === slot.group && !skipped.includes(s.slotId)).length > 1;
@@ -247,7 +247,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
       {stepper === 'reps' && <Stepper title="Reps" value={reps} step={1} min={0} unit="reps" onChange={(v) => setD({ reps: v })} onClose={() => setStepper(null)} />}
 
       {pendingRpe && (
-        <RpePicker initial={logged?.rpe} required={ex.type === 'main'} onPick={commitSet} onClose={() => setPendingRpe(null)} />
+        <RpePicker initial={logged?.rpe} required={isMaxStyle(slot)} onPick={commitSet} onClose={() => setPendingRpe(null)} />
       )}
 
       {sheet === 'explain' && (
@@ -261,7 +261,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
       {sheet === 'info' && (
         <Sheet onClose={() => setSheet(null)}>
           <h2>{ex.name}</h2>
-          <ul className="cues">{(CUES[ex.id] ?? []).map((c) => <li key={c}>{c}</li>)}</ul>
+          {CUES[ex.id] ? <ul className="cues">{CUES[ex.id].map((c) => <li key={c}>{c}</li>)}</ul> : <div className="muted">No form cues for your own exercises.</div>}
           <div className="card" style={{ background: 'var(--tile)', boxShadow: 'none' }}>
             <b>Current e1RM:</b> {snap.exerciseStates[ex.id] ? `${formatNumber(snap.exerciseStates[ex.id].e1rm, 1)} ${unit}` : 'not yet known'}
             <div className="muted" style={{ marginTop: 6 }}>{rx.reason}</div>
@@ -270,39 +270,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
         </Sheet>
       )}
 
-      {sheet === 'swap' && (
-        <Sheet onClose={() => setSheet(null)}>
-          <h2>Replace {ex.name}</h2>
-          <p className="muted" style={{ margin: 0 }}>Same movement family. Logs go to the exercise you pick.</p>
-          {Object.values(exercises).filter((e) => e.family === ex.family && e.id !== ex.id).concat(exId !== slot.exerciseId ? [exercises[slot.exerciseId]] : []).filter((e, i, a) => a.findIndex((x) => x.id === e.id) === i).map((alt) => {
-            // Swapping back to the slot's own exercise shows its slot state, i.e. what will actually load.
-            const p = slotPrescription(snap, slot, alt.id);
-            const setSwap = async (permanent: boolean) => {
-              if (permanent) {
-                await makeSwapPermanent(db, session.id, slot.slotId, alt.id);
-              } else {
-                const swaps = session.swaps.filter((s) => s.slotId !== slot.slotId);
-                if (alt.id !== slot.exerciseId) swaps.push({ slotId: slot.slotId, fromExerciseId: slot.exerciseId, toExerciseId: alt.id });
-                await db.sessions.update(session.id, { swaps });
-              }
-              setSheet(null);
-            };
-            return (
-              <div className="alt" key={alt.id}>
-                <div className="top">
-                  <b>{alt.name}</b>
-                  <span className="w">{p.weight != null ? `${formatNumber(p.weight)} ${unit}` : 'Enter weight'}</span>
-                </div>
-                <div className="row"><KindBadge kind={p.kind} /><span className="muted" style={{ fontSize: 13 }}>{p.kind === 'normal' ? 'From its own history' : p.kind === 'predicted' ? 'Predicted from a related lift' : 'No data yet'}</span></div>
-                <div className="row">
-                  <button className="btn secondary small grow" onClick={() => setSwap(false)}>Swap for today</button>
-                  <button className="btn secondary small grow" onClick={() => setSwap(true)}>Make permanent</button>
-                </div>
-              </div>
-            );
-          })}
-        </Sheet>
-      )}
+      {sheet === 'swap' && <SwapSheet snap={snap} session={session} slot={slot} currentId={exId} onClose={() => setSheet(null)} />}
 
       {sheet === 'reorder' && (
         <Sheet onClose={() => setSheet(null)}>

@@ -13,7 +13,7 @@ const AGO: { v: TimeAgo; label: string }[] = [
 
 export function Onboarding({ snap, onDone }: { snap: Snapshot; onDone: () => void }) {
   const unit = snap.settings.units;
-  const ids = [...new Set(snap.days.flatMap((d) => d.slots.map((s) => s.exerciseId)))];
+  const ids = [...new Set(snap.activeDays.flatMap((d) => d.slots.map((s) => s.exerciseId)))];
   const [bw, setBw] = useState(snap.settings.bodyweight != null ? String(snap.settings.bodyweight) : '');
   const [returning, setReturning] = useState(snap.settings.returnPhase.active);
   const [rows, setRows] = useState<Record<string, { w: string; r: string; ago: TimeAgo }>>(

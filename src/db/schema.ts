@@ -1,14 +1,9 @@
 import type {
-  Equipment, ExerciseDef, ExerciseState, LoggedSet, PrescriptionKind, ReturnPhase, SlotDef, SlotState,
-  RestTimes, StrongerCard, SummaryItem, Unit,
+  Equipment, ExerciseDef, ExerciseState, LoggedSet, PrescriptionKind, ReturnPhase, SlotState,
+  RestTimes, StrongerCard, Program, ProgramDay, SummaryItem, Unit,
 } from '../engine';
 
-export interface ProgramDayRow {
-  id: string;
-  label: string;
-  order: number;
-  slots: SlotDef[];
-}
+export type ProgramDayRow = ProgramDay;
 
 export interface Swap {
   slotId: string;
@@ -27,6 +22,8 @@ export interface SessionSummary {
 export interface SessionRow {
   id: string;
   dayId: string;
+  /** The day's name when the session started, so renaming or deleting the day never rewrites history. */
+  dayName?: string;
   startedAt: number;
   finishedAt?: number;
   endedEarly?: boolean;
@@ -55,8 +52,10 @@ export interface SettingsRow {
   keepScreenAwake: boolean;
   timerSound: boolean;
   returnPhase: ReturnPhase;
+  /** The program whose days the Home screen rotates through. */
+  activeProgramId: string | null;
   /** Set once the starting-weights onboarding was completed or skipped. */
   onboarded?: boolean;
 }
 
-export type { ExerciseDef, ExerciseState, SlotState };
+export type { ExerciseDef, ExerciseState, Program, SlotState };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSlot, moveSlot, newSlotId, pairWithPrevious, removeSlot, renumberGroups, unpair, updateSlot } from './index';
+import { addSlot, moveSlot, moveSlotTo, pairWithPrevious, removeSlot, renumberGroups, unpair, updateSlot } from './index';
 import { days } from './testkit';
 
 const A = days[0].slots; // groups 1,2,2,3,3
@@ -28,11 +28,22 @@ describe('program editing helpers', () => {
     expect(r).toHaveLength(4);
     expect(groups(r)).toEqual([1, 2, 3, 3]);
   });
-  it('adds a straight-sets slot with a fresh id', () => {
-    const a = addSlot('A', A, 'dumbbell-curl');
-    expect(a[5]).toMatchObject({ slotId: 'A6', exerciseId: 'dumbbell-curl', group: 4, sets: 3 });
-    expect(newSlotId('A', removeSlot(A, 4))).toBe('A5'); // never reuses an id still present
-    expect(newSlotId('A', [])).toBe('A1');
+  it('adds a straight-sets slot with the id it is given and style-based defaults', () => {
+    const a = addSlot(A, 'dumbbell-curl', { slotId: 'new-1', progressionStyle: 'repsFirst' });
+    expect(a[5]).toMatchObject({ slotId: 'new-1', exerciseId: 'dumbbell-curl', progressionStyle: 'repsFirst', group: 4, sets: 3, repMin: 8, repMax: 12 });
+    const m = addSlot([], 'back-squat', { slotId: 'x', progressionStyle: 'estimatedMax' });
+    expect(m[0]).toMatchObject({ group: 1, sets: 3, repMin: 5, repMax: 8 });
+    expect(addSlot(A, 'x', { slotId: 'y', progressionStyle: 'repsFirst', sets: 5 })[5].sets).toBe(5);
+  });
+  it('moves a slot to an index (drag and drop) and renumbers groups', () => {
+    const m = moveSlotTo(A, 0, 4);
+    expect(m.map((s) => s.slotId)).toEqual(['A2', 'A3', 'A4', 'A5', 'A1']);
+    expect(groups(m)).toEqual([1, 1, 2, 2, 3]);
+    expect(moveSlotTo(A, 2, 2)).toBe(A);
+    expect(moveSlotTo(A, 0, 9)).toBe(A);
+  });
+  it('changes a slot\'s progression style', () => {
+    expect(updateSlot(A, 1, { progressionStyle: 'repsFirst' })[1].progressionStyle).toBe('repsFirst');
   });
   it('edits sets and reps, keeping repMin ≤ repMax', () => {
     expect(updateSlot(A, 0, { sets: 5 })[0].sets).toBe(5);

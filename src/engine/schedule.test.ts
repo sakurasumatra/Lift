@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildQueue, setsForMain } from './index';
-import { days, lib } from './testkit';
+import { buildQueue, isMaxStyle, setsForMain } from './index';
+import { days } from './testkit';
 
 const queueFor = (dayId: string, rp = { active: false, sessionsCompleted: 0 }) => {
   const day = days.find((d) => d.id === dayId)!;
@@ -8,8 +8,8 @@ const queueFor = (dayId: string, rp = { active: false, sessionsCompleted: 0 }) =
     day.slots.map((s) => ({
       slotId: s.slotId,
       group: s.group,
-      sets: lib[s.exerciseId].type === 'main' ? setsForMain(s.sets, rp) : s.sets,
-      isMain: lib[s.exerciseId].type === 'main',
+      sets: isMaxStyle(s) ? setsForMain(s.sets, rp) : s.sets,
+      isMain: isMaxStyle(s),
     })),
   );
 };

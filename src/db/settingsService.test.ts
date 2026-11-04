@@ -51,12 +51,12 @@ describe('settings edits', () => {
     expect(snap.exercises['bench-press'].increment).toBe(1.25);
     expect(snap.exercises['dumbbell-curl'].increment).toBe(2);
   });
-  it('family ratio and exercise type/equipment edits', async () => {
+  it('family ratio and exercise equipment edits', async () => {
     await setFamilyRatio(db, 'leg-press', 2);
-    await updateExercise(db, 'lat-pulldown', { equipment: 'machine', type: 'main' });
+    await updateExercise(db, 'lat-pulldown', { equipment: 'machine' });
     const snap = await loadSnapshot(db);
     expect(snap.exercises['leg-press'].familyRatio).toBe(2);
-    expect(snap.exercises['lat-pulldown']).toMatchObject({ equipment: 'machine', type: 'main', increment: 2.5 });
+    expect(snap.exercises['lat-pulldown']).toMatchObject({ equipment: 'machine', increment: 2.5 });
   });
   it('saving a program day clears slot state for removed or re-assigned slots only', async () => {
     await doSession();
@@ -77,7 +77,7 @@ describe('settings edits', () => {
     const snap = await loadSnapshot(db);
     expect(snap.settings.onboarded).toBeUndefined();
     expect(await db.sessions.count()).toBe(0);
-    expect(Object.keys(snap.exercises)).toHaveLength(32);
+    expect(Object.keys(snap.exercises).length).toBeGreaterThanOrEqual(150);
     expect(snap.settings.returnPhase).toEqual({ active: true, sessionsCompleted: 0 });
   });
 });
