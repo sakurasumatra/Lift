@@ -17,12 +17,18 @@ export function checkGettingStronger(input: {
   exercise: Pick<ExerciseDef, 'equipment' | 'increment'>;
   state?: ExerciseState;
   setsSoFar: E1rmSetInput[];
+  /**
+   * This session's sets for the exercise before the one just logged. If those already crossed the
+   * threshold, the toast was due earlier, so it is not shown again (holds even if the screen remounts).
+   */
+  setsBefore?: E1rmSetInput[];
   bodyweight: number;
   returnActive: boolean;
   alreadyShown?: boolean;
 }): StrongerCheck | null {
-  const { exercise, state, setsSoFar, bodyweight, returnActive, alreadyShown } = input;
+  const { exercise, state, setsSoFar, setsBefore, bodyweight, returnActive, alreadyShown } = input;
   if (alreadyShown || !state || state.sessionCount === 0) return null;
+  if (setsBefore?.length && checkGettingStronger({ ...input, setsSoFar: setsBefore, setsBefore: undefined })) return null;
   const session = sessionE1rm(exercise.equipment, setsSoFar, bodyweight);
   if (session == null) return null;
   const provisional = smoothE1rm(state.e1rm, session, returnActive);

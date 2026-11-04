@@ -35,6 +35,7 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
         ...s,
         nextWeight: convertRounded(s.nextWeight, from, to, step),
         lastPrescribedWeight: s.lastPrescribedWeight == null ? undefined : convertRounded(s.lastPrescribedWeight, from, to, step),
+        lastWorkingWeight: s.lastWorkingWeight == null ? undefined : convertLogged(s.lastWorkingWeight, from, to),
         reason: `Converted from ${from} to ${to} and rounded to your ${to} increment`,
       };
     }));
@@ -45,6 +46,25 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
       weight: convertLogged(s.weight, from, to),
       prescribedWeight: s.prescribedWeight == null ? null : convertLogged(s.prescribedWeight, from, to),
     })));
+
+    // Stored session summaries are shown in History with the current unit label: convert them too.
+    const sessions = await db.sessions.toArray();
+    await db.sessions.bulkPut(sessions.map((s) => (s.summary ? {
+      ...s,
+      summary: {
+        ...s.summary,
+        items: s.summary.items.map((it) => ({
+          ...it,
+          nextWeight: it.nextWeight == null ? null : convertRounded(it.nextWeight, from, to, inc.get(it.exerciseId) ?? 1),
+        })),
+        stronger: s.summary.stronger.map((c) => ({
+          ...c,
+          oldE1rm: clean(convertWeight(c.oldE1rm, from, to)),
+          newE1rm: clean(convertWeight(c.newE1rm, from, to)),
+          delta: clean(convertWeight(c.delta, from, to)),
+        })),
+      },
+    } : s)));
 
     await db.settings.update('main', {
       units: to,

@@ -239,3 +239,60 @@ describe('bodyweight exercises', () => {
     expect(r.exerciseStates['pull-up'].e1rm).toBeCloseTo(93.333, 2);
   });
 });
+
+describe('review fixes', () => {
+  it('a pending deload on an untrained slot is kept until that slot is trained', () => {
+    // Bench deloaded in both slots; now A2 is trained at its deload weight. B1 has not been trained yet.
+    const r = finishSessionState(finishInput({
+      exerciseStates: { 'bench-press': exState('bench-press', 100) },
+      slotStates: {
+        A2: slotState('A2', 72.5, { nextWeight: 65, prescriptionKind: 'deload' }),
+        B1: slotState('B1', 90, { nextWeight: 80, prescriptionKind: 'deload', reason: 'Deload: …' }),
+      },
+      sets: [0, 1, 2].map((i) => set('A2', i, 65, 8, 8, { prescribedWeight: 65, prescriptionKind: 'deload' })),
+    }));
+    expect(r.slotStates.B1).toBeUndefined(); // untouched: the stored deload still applies next time
+    expect(r.slotStates.A2.prescriptionKind).toBe('normal');
+  });
+
+  it('deload uses the slot’s last WORKING weight, not its prescribed weight', () => {
+    // A2 prescribed 80 but the lifter worked up to 85.
+    const sets = [80, 82.5, 85].map((w, i) => set('A2', i, w, 5, 9, { prescribedWeight: i === 0 ? 80 : w, prescriptionKind: 'normal' }));
+    const r = finishSessionState(finishInput({
+      exerciseStates: { 'bench-press': exState('bench-press', 130, { missCount: 1 }) },
+      // B1 last trained: prescribed 90, but the last set was done at 95
+      slotStates: { A2: slotState('A2', 80), B1: slotState('B1', 90, { lastWorkingWeight: 95 }) },
+      sets,
+    }));
+    expect(r.deloaded).toEqual(['bench-press']);
+    expect(r.slotStates.A2.nextWeight).toBe(75); // 90% of 85 = 76.5 → 75 (90% of prescribed 80 would be 72.5)
+    expect(r.slotStates.B1.nextWeight).toBe(85); // 90% of 95 = 85.5 → 85 (90% of prescribed 90 would be 80)
+    expect(r.slotStates.A2.lastWorkingWeight).toBe(85);
+  });
+
+  it('a calibration placeholder is never used as the "last working weight" of an untrained slot', () => {
+    // Legacy B1 state from a calibration session that stored the empty bar (20) as its prescription.
+    const r = finishSessionState(finishInput({
+      exerciseStates: { 'bench-press': exState('bench-press', 100, { missCount: 1 }) },
+      slotStates: { A2: slotState('A2', 80), B1: slotState('B1', 20, { lastPrescribedKind: 'calibration', nextWeight: 85 }) },
+      sets: benchSets('A2', 73, 6, 9),
+    }));
+    expect(r.slotStates.B1.nextWeight).toBe(75); // 90% of 85, not 90% of the 20 kg placeholder
+  });
+
+  it('an accessory logged with only zero-rep sets does not crash and counts as a failed session', () => {
+    const sets = [0, 1].map((i) => set('A3', i, 50, 0, null, { prescribedWeight: 50 }));
+    const first = finishSessionState(finishInput({ sets }));
+    expect(first.slotStates.A3.nextWeight).toBe(50);
+    const withState = finishSessionState(finishInput({ sets, exerciseStates: { 'chest-supported-row': exState('chest-supported-row', 80, { accessoryFailCount: 1 }) } }));
+    expect(withState.slotStates.A3.nextWeight).toBe(47.5);
+    expect(withState.exerciseStates['chest-supported-row']).toMatchObject({ e1rm: 80, accessoryFailCount: 0 });
+  });
+
+  it('the session that ends the return phase still smooths upward with α 0.6', () => {
+    const sets = benchSets('A2', 80, 8, 8); // 106.67
+    const r = finishSessionState(finishInput({ sets, returnPhase: { active: true, sessionsCompleted: 11 }, exerciseStates: { 'bench-press': exState('bench-press', 100) } }));
+    expect(r.returnPhase.active).toBe(false);
+    expect(r.exerciseStates['bench-press'].e1rm).toBeCloseTo(100 + 0.6 * 6.6667, 3);
+  });
+});

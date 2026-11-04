@@ -1,6 +1,7 @@
 import type { ExerciseDef, ExerciseState, SlotDef, SlotState } from '../engine';
 import { finishSessionState, seedExercise, type TimeAgo } from '../engine';
 import type { LiftDB } from './db';
+import { saveProgramDay } from './settingsService';
 import type { ProgramDayRow, SessionRow, SetRow, SettingsRow } from './schema';
 
 export interface Snapshot {
@@ -107,6 +108,19 @@ export async function finishSession(db: LiftDB, sessionId: string, endedEarly: b
   });
 }
 
+/**
+ * Swap sheet → "Make permanent": the program slot gets the new exercise (through saveProgramDay, so
+ * the old exercise's slot state is dropped) and the session no longer needs a one-off swap for it.
+ */
+export async function makeSwapPermanent(db: LiftDB, sessionId: string, slotId: string, exerciseId: string): Promise<void> {
+  await db.transaction('rw', db.sessions, db.programDays, db.slotState, async () => {
+    const session = (await db.sessions.get(sessionId))!;
+    const day = (await db.programDays.get(session.dayId))!;
+    await saveProgramDay(db, day.id, day.slots.map((s) => (s.slotId === slotId ? { ...s, exerciseId } : s)));
+    await db.sessions.update(sessionId, { swaps: session.swaps.filter((s) => s.slotId !== slotId) });
+  });
+}
+
 /** Abandon a session with nothing logged. */
 export async function discardSession(db: LiftDB, sessionId: string): Promise<void> {
   await db.transaction('rw', db.sessions, db.sets, async () => {
@@ -133,6 +147,8 @@ export async function applyOnboarding(
     for (const e of input.entries) {
       const ex = await db.exercises.get(e.exerciseId);
       if (!ex || !(e.reps > 0)) continue;
+      // A bodyweight lift's e1RM needs the bodyweight; without it, leave it to a calibration set.
+      if (ex.equipment === 'bodyweight' && !(bodyweight > 0)) continue;
       const existing = await db.exerciseState.get(e.exerciseId);
       if (existing && existing.sessionCount > 0) continue;
       await db.exerciseState.put(seedExercise(ex, e.weight, e.reps, e.ago, bodyweight, now));

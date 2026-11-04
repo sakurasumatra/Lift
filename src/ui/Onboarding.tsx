@@ -50,7 +50,7 @@ export function Onboarding({ snap, onDone }: { snap: Snapshot; onDone: () => voi
         return (
           <div className="card" key={id}>
             <b>{ex.name}</b>
-            <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{ex.equipment === 'bodyweight' ? 'Added load (negative = assistance)' : ex.equipment === 'dumbbell' ? 'Weight per dumbbell' : 'A set you remember'}</div>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{ex.equipment === 'bodyweight' ? `Added load (negative = assistance)${num(bw) > 0 ? '' : ' — enter your bodyweight above or this is ignored'}` : ex.equipment === 'dumbbell' ? 'Weight per dumbbell' : 'A set you remember'}</div>
             <div className="row">
               <input className="num" inputMode="decimal" placeholder={unit} aria-label={`${ex.name} weight`} value={r.w} onChange={(e) => patch(id, { w: e.target.value })} />
               <span>×</span>

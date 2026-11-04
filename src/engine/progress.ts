@@ -207,9 +207,14 @@ export function finishSessionState(input: FinishInput): FinishResult {
         lastWorking = trained[trained.length - 1].weight;
         trainedSlotIds.add(slot.slotId);
       } else if (st) {
+        // A deload waiting for this slot stays until the slot is actually trained.
+        if (st.prescriptionKind === 'deload' && !deloadFlags.has(ex.id)) continue;
         baseline = st.lastPrescribedWeight;
         baselineKind = st.lastPrescribedKind;
-        lastWorking = st.lastPrescribedWeight ?? st.nextWeight;
+        // Older states have no lastWorkingWeight; a calibration "prescription" was only a placeholder.
+        lastWorking = st.lastWorkingWeight
+          ?? (st.lastPrescribedKind !== 'calibration' ? st.lastPrescribedWeight : undefined)
+          ?? st.nextWeight;
       } else {
         continue; // never trained and not trained now: on-demand prescription will use the e1RM
       }
@@ -237,13 +242,17 @@ export function finishSessionState(input: FinishInput): FinishResult {
         slotId: slot.slotId,
         lastPrescribedWeight: trained.length ? baseline : st?.lastPrescribedWeight,
         lastPrescribedKind: trained.length ? baselineKind : st?.lastPrescribedKind,
+        lastWorkingWeight: trained.length ? lastWorking : st?.lastWorkingWeight,
         nextWeight,
         reason,
         prescriptionKind: kind,
       };
     } else if (trained.length) {
-      const exState = newExStates[ex.id];
-      const prevFail = input.exerciseStates[ex.id]?.accessoryFailCount ?? 0;
+      const prevState = input.exerciseStates[ex.id];
+      // Only zero-rep sets: no session e1RM, but double progression still counts the failed session.
+      if (!newExStates[ex.id] && prevState) newExStates[ex.id] = { ...prevState };
+      const exState = newExStates[ex.id] as ExerciseState | undefined;
+      const prevFail = prevState?.accessoryFailCount ?? 0;
       const r = nextAccessoryPrescription({
         sets: trained,
         repMin: slot.repMin,
@@ -252,12 +261,13 @@ export function finishSessionState(input: FinishInput): FinishResult {
         failCountBefore: prevFail,
         unit,
       });
-      exState.accessoryFailCount = r.failCount;
+      if (exState) exState.accessoryFailCount = r.failCount;
       trainedSlotIds.add(slot.slotId);
       newSlotStates[slot.slotId] = {
         slotId: slot.slotId,
         lastPrescribedWeight: trained[0].prescribedWeight ?? st?.nextWeight ?? undefined,
         lastPrescribedKind: trained[0].prescriptionKind ?? st?.prescriptionKind,
+        lastWorkingWeight: trained[trained.length - 1].weight,
         nextWeight: r.weight,
         reason: r.reason,
         prescriptionKind: 'normal',

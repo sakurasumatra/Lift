@@ -1,4 +1,5 @@
 import type { ExerciseDef, ExerciseState } from './types';
+import { effectiveLoad } from './e1rm';
 import { floorToIncrement } from './units';
 
 export type TimeAgo = 'under-1' | '1-3' | '3-6' | '6-plus';
@@ -18,8 +19,7 @@ export function seedE1rm(
   ago: TimeAgo,
   bodyweight: number,
 ): number {
-  const load = exercise.equipment === 'bodyweight' ? Math.max(0, bodyweight + weight) : weight;
-  return load * (1 + (reps + 1) / 30) * DETRAINING[ago];
+  return effectiveLoad(exercise.equipment, weight, bodyweight) * (1 + (reps + 1) / 30) * DETRAINING[ago];
 }
 
 /** Builds the exerciseState (and accessory starting weight) for an onboarding seed. */
@@ -41,7 +41,11 @@ export function seedExercise(
     calibrateFirst: ago === '3-6' || ago === '6-plus',
   };
   if (exercise.type === 'accessory') {
-    state.lastWeight = floorToIncrement(weight * DETRAINING[ago], exercise.increment);
+    // Bodyweight lifts detrain on effective load: assisted −20 kg at 80 kg becomes −29 kg (more help), not −17.
+    const start = exercise.equipment === 'bodyweight'
+      ? effectiveLoad('bodyweight', weight, bodyweight) * DETRAINING[ago] - bodyweight
+      : weight * DETRAINING[ago];
+    state.lastWeight = floorToIncrement(start, exercise.increment);
   }
   return state;
 }

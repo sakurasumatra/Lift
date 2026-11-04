@@ -58,6 +58,8 @@ export interface SlotState {
   /** Weight prescribed for the last session in which this slot was actually trained. */
   lastPrescribedWeight?: number;
   lastPrescribedKind?: PrescriptionKind;
+  /** Weight of the last set logged the last time this slot was trained (deloads take 90% of it). */
+  lastWorkingWeight?: number;
   nextWeight: number;
   reason: string;
   prescriptionKind: PrescriptionKind;
