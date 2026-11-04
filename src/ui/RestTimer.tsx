@@ -41,6 +41,14 @@ export function beep(): void {
   } catch { /* audio blocked */ }
 }
 
+/**
+ * Milliseconds left, from the stored end timestamp. `now` can lag behind the real clock by up to one tick when a
+ * new rest starts while the timer is already on screen, so it is capped at the rest length (no "3:01" for a 3:00 rest).
+ */
+export function remainingMs(rest: RestState, now: number): number {
+  return Math.max(0, Math.min(rest.endsAt - now, rest.total * 1000));
+}
+
 /** Remaining time is always computed from the stored end timestamp, never by counting ticks. */
 export function RestTimer({ rest, sound, onChange }: { rest: RestState; sound: boolean; onChange: (r: RestState | null) => void }) {
   const [now, setNow] = useState(Date.now());
@@ -50,12 +58,13 @@ export function RestTimer({ rest, sound, onChange }: { rest: RestState; sound: b
   useEffect(() => {
     fired.current = rest.endsAt <= Date.now();
     const tick = () => setNow(Date.now());
+    tick();
     const id = window.setInterval(tick, 250);
     document.addEventListener('visibilitychange', tick);
     return () => { window.clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [rest.endsAt]);
 
-  const remaining = Math.max(0, rest.endsAt - now);
+  const remaining = remainingMs(rest, now);
   useEffect(() => {
     if (remaining === 0 && !fired.current) {
       fired.current = true;

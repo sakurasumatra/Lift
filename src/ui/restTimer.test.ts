@@ -25,6 +25,19 @@ async function load() {
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe('rest timer countdown', () => {
+  it('is computed from the end timestamp, never above the rest length, never below zero', async () => {
+    const { remainingMs } = await load();
+    const rest = { endsAt: 100_000, total: 75 };
+    expect(remainingMs(rest, 25_000)).toBe(75_000);
+    expect(remainingMs(rest, 24_800)).toBe(75_000); // a stale "now" from the previous tick: was 75.2 s → "1:16"
+    expect(remainingMs(rest, 70_000)).toBe(30_000); // e.g. after the app was in the background
+    expect(remainingMs(rest, 200_000)).toBe(0);
+    // +30 s grows both the end and the total, so the cap never cuts the extra time
+    expect(remainingMs({ endsAt: 130_000, total: 105 }, 60_000)).toBe(70_000);
+  });
+});
+
 describe('rest timer sound', () => {
   it('creates and resumes the audio context on the user’s tap, and the beep at zero reuses it', async () => {
     const { primeAudio, beep } = await load();
