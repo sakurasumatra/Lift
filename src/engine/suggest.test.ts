@@ -74,3 +74,16 @@ describe('"you’re getting stronger"', () => {
     expect(fast2).not.toBeNull(); // +3.2
   });
 });
+
+describe('"you’re getting stronger" toast survives a screen remount', () => {
+  const bench = lib['bench-press'];
+  const base = { exercise: bench, state: exState('bench-press', 110), bodyweight: 80, returnActive: false };
+  it('fires on the set that first crosses the threshold', () => {
+    const before = [{ weight: 80, reps: 5, rpe: 8 }]; // 98.7: below
+    expect(checkGettingStronger({ ...base, setsBefore: before, setsSoFar: [...before, { weight: 100, reps: 5, rpe: 8 }] })).not.toBeNull();
+  });
+  it('does not fire again for later sets once an earlier set already crossed it (no in-memory flag)', () => {
+    const before = [{ weight: 100, reps: 5, rpe: 8 }]; // already crossed
+    expect(checkGettingStronger({ ...base, setsBefore: before, setsSoFar: [...before, { weight: 102.5, reps: 5, rpe: 8 }] })).toBeNull();
+  });
+});

@@ -103,3 +103,38 @@ describe('export / import', () => {
     expect(await db.sessions.count()).toBe(1);
   });
 });
+
+describe('unit switching: review fixes', () => {
+  it('converts stored session summaries and last working weights too', async () => {
+    await db.exerciseState.put({ exerciseId: 'back-squat', e1rm: 110, missCount: 0, accessoryFailCount: 0, updatedAt: 1, sessionCount: 3 });
+    await db.slotState.put({ slotId: 'A1', lastPrescribedWeight: 90, nextWeight: 92.5, reason: 'x', prescriptionKind: 'normal' });
+    await doSession(); // 100 × 5 @ 8 → e1RM 123.3 → stronger card
+    const before = (await db.sessions.toArray())[0].summary!;
+    expect(before.stronger).toHaveLength(1);
+    await switchUnits(db, 'lb');
+    const after = (await db.sessions.toArray())[0].summary!;
+    expect(after.stronger[0].newE1rm).toBeCloseTo(before.stronger[0].newE1rm * 2.20462, 1);
+    expect(after.stronger[0].delta).toBeCloseTo(before.stronger[0].delta * 2.20462, 1);
+    expect(after.items[0].nextWeight! % 5).toBe(0);
+    expect(after.items[0].nextWeight!).toBeCloseTo(before.items[0].nextWeight! * 2.20462, -1);
+    expect((await db.slotState.get('A1'))!.lastWorkingWeight).toBeCloseTo(220.5, 1);
+  });
+});
+
+describe('program editor: rep-range changes', () => {
+  it('changing a slot’s rep range resets its prescription; sets, order and pairing keep it', async () => {
+    await db.slotState.bulkPut([
+      { slotId: 'A1', nextWeight: 100, reason: 'x', prescriptionKind: 'normal' },
+      { slotId: 'A2', nextWeight: 80, reason: 'x', prescriptionKind: 'normal' },
+      { slotId: 'A3', nextWeight: 50, reason: 'x', prescriptionKind: 'normal' },
+    ]);
+    const day = (await db.programDays.get('A'))!;
+    const edited = day.slots.map((s) =>
+      s.slotId === 'A2' ? { ...s, repMin: 10, repMax: 12 } // rep range changed → reset
+        : s.slotId === 'A1' ? { ...s, sets: 5 } // set count only → kept
+          : s);
+    await saveProgramDay(db, 'A', [edited[0], edited[2], edited[1], edited[3], edited[4]]); // also reordered
+    const keys = (await db.slotState.toArray()).map((s) => s.slotId).sort();
+    expect(keys).toEqual(['A1', 'A3']);
+  });
+});

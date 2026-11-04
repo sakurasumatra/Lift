@@ -24,6 +24,7 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
       ...s,
       e1rm: clean(convertWeight(s.e1rm, from, to)),
       lastWeight: s.lastWeight == null ? undefined : convertRounded(s.lastWeight, from, to, inc.get(s.exerciseId) ?? 1),
+      nextWeight: s.nextWeight == null ? undefined : convertRounded(s.nextWeight, from, to, inc.get(s.exerciseId) ?? 1),
     })));
 
     const days = await db.programDays.toArray();
@@ -35,6 +36,7 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
         ...s,
         nextWeight: convertRounded(s.nextWeight, from, to, step),
         lastPrescribedWeight: s.lastPrescribedWeight == null ? undefined : convertRounded(s.lastPrescribedWeight, from, to, step),
+        lastWorkingWeight: s.lastWorkingWeight == null ? undefined : convertLogged(s.lastWorkingWeight, from, to),
         reason: `Converted from ${from} to ${to} and rounded to your ${to} increment`,
       };
     }));
@@ -45,6 +47,25 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
       weight: convertLogged(s.weight, from, to),
       prescribedWeight: s.prescribedWeight == null ? null : convertLogged(s.prescribedWeight, from, to),
     })));
+
+    // Stored session summaries are shown in History with the current unit label: convert them too.
+    const sessions = await db.sessions.toArray();
+    await db.sessions.bulkPut(sessions.map((s) => (s.summary ? {
+      ...s,
+      summary: {
+        ...s.summary,
+        items: s.summary.items.map((it) => ({
+          ...it,
+          nextWeight: it.nextWeight == null ? null : convertRounded(it.nextWeight, from, to, inc.get(it.exerciseId) ?? 1),
+        })),
+        stronger: s.summary.stronger.map((c) => ({
+          ...c,
+          oldE1rm: clean(convertWeight(c.oldE1rm, from, to)),
+          newE1rm: clean(convertWeight(c.newE1rm, from, to)),
+          delta: clean(convertWeight(c.delta, from, to)),
+        })),
+      },
+    } : s)));
 
     await db.settings.update('main', {
       units: to,
@@ -82,15 +103,17 @@ export async function updateExercise(db: LiftDB, id: string, patch: Partial<Pick
 
 /**
  * Save a day's slots. Slots that were removed lose their slot state, and so do slots whose exercise
- * changed (a prescription for the old exercise doesn't apply to the new one).
+ * or rep range changed (a prescription for the old exercise or range doesn't fit the new one; the
+ * next one comes from the exercise's e1RM or last weight). Reordering, regrouping and set counts keep it.
  */
 export async function saveProgramDay(db: LiftDB, dayId: string, slots: SlotDef[]): Promise<void> {
   await db.transaction('rw', db.programDays, db.slotState, async () => {
     const day = (await db.programDays.get(dayId))!;
-    const before = new Map(day.slots.map((s) => [s.slotId, s.exerciseId]));
+    const before = new Map(day.slots.map((s) => [s.slotId, s]));
     const stale = [...before.keys()].filter((id) => {
       const now = slots.find((s) => s.slotId === id);
-      return !now || now.exerciseId !== before.get(id);
+      const was = before.get(id)!;
+      return !now || now.exerciseId !== was.exerciseId || now.repMin !== was.repMin || now.repMax !== was.repMax;
     });
     await db.slotState.bulkDelete(stale);
     await db.programDays.put({ ...day, slots });

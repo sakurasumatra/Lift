@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { LiftDB, ensureSeeded } from './db';
-import { applyOnboarding, finishSession, loadSnapshot, nextDayId, saveSet, startSession } from './service';
+import { applyOnboarding, finishSession, loadSnapshot, makeSwapPermanent, nextDayId, saveSet, startSession } from './service';
 
 let db: LiftDB;
 beforeEach(async () => {
@@ -84,5 +84,26 @@ describe('onboarding', () => {
     await applyOnboarding(db, { bodyweight: null, returningAfterBreak: false, entries: [{ exerciseId: 'back-squat', weight: 50, reps: 5, ago: '1-3' }] });
     expect((await loadSnapshot(db)).exerciseStates['back-squat'].e1rm).toBe(150);
     expect((await loadSnapshot(db)).settings.returnPhase.active).toBe(false);
+  });
+});
+
+describe('review fixes', () => {
+  it('onboarding skips bodyweight lifts when no bodyweight is known (instead of seeding e1RM from 0 kg)', async () => {
+    const n = await applyOnboarding(db, { bodyweight: null, returningAfterBreak: true, entries: [{ exerciseId: 'pull-up', weight: 0, reps: 8, ago: '1-3' }] });
+    expect(n).toBe(0);
+    expect((await loadSnapshot(db)).exerciseStates['pull-up']).toBeUndefined();
+    await applyOnboarding(db, { bodyweight: 80, returningAfterBreak: true, entries: [{ exerciseId: 'pull-up', weight: 0, reps: 8, ago: '1-3' }] });
+    expect((await loadSnapshot(db)).exerciseStates['pull-up'].e1rm).toBeCloseTo(80 * 1.3 * 0.95, 6);
+  });
+
+  it('"Make permanent" swap drops the old exercise’s slot state so its weight is not reused', async () => {
+    await db.slotState.put({ slotId: 'A2', lastPrescribedWeight: 90, nextWeight: 92.5, reason: 'bench', prescriptionKind: 'normal' });
+    const s = await startSession(db, 'A');
+    await db.sessions.update(s.id, { swaps: [{ slotId: 'A2', fromExerciseId: 'bench-press', toExerciseId: 'dumbbell-bench-press' }] });
+    await makeSwapPermanent(db, s.id, 'A2', 'dumbbell-bench-press');
+    const snap = await loadSnapshot(db);
+    expect(snap.days[0].slots.find((x) => x.slotId === 'A2')!.exerciseId).toBe('dumbbell-bench-press');
+    expect(snap.slotStates.A2).toBeUndefined();
+    expect((await db.sessions.get(s.id))!.swaps).toEqual([]);
   });
 });

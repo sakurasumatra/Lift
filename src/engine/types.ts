@@ -49,6 +49,9 @@ export interface ExerciseState {
   sessionCount: number;
   /** Last working weight (logged-weight terms); used when there is no slot state (swaps, seeds). */
   lastWeight?: number;
+  /** Accessories: next weight from double progression, used when there is no slot state (swaps). */
+  nextWeight?: number;
+  nextReason?: string;
   /** Seeded with a 3+ month gap: the first set of the first session is a calibration set. */
   calibrateFirst?: boolean;
 }
@@ -58,6 +61,8 @@ export interface SlotState {
   /** Weight prescribed for the last session in which this slot was actually trained. */
   lastPrescribedWeight?: number;
   lastPrescribedKind?: PrescriptionKind;
+  /** Weight of the last set logged the last time this slot was trained (deloads take 90% of it). */
+  lastWorkingWeight?: number;
   nextWeight: number;
   reason: string;
   prescriptionKind: PrescriptionKind;

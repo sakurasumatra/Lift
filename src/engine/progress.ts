@@ -13,15 +13,16 @@ import type {
   SummaryItem,
   Unit,
 } from './types';
-import { floorToIncrement, formatNumber, formatSigned } from './units';
+import { floorToIncrement, formatNumber, formatSigned, minLoad } from './units';
 
 export const DELOAD_FACTOR = 0.9;
 
 /** 90% of the last working weight, rounded down (computed on effective load for bodyweight lifts). */
-export function deloadWeight(lastWorking: number, exercise: ExerciseDef, bodyweight: number): number {
+export function deloadWeight(lastWorking: number, exercise: ExerciseDef, bodyweight: number, unit?: Unit): number {
   const eff = effectiveLoad(exercise.equipment, lastWorking, bodyweight) * DELOAD_FACTOR;
   const logged = exercise.equipment === 'bodyweight' ? eff - bodyweight : eff;
-  return floorToIncrement(logged, exercise.increment);
+  const w = floorToIncrement(logged, exercise.increment);
+  return unit ? Math.max(w, minLoad(exercise.equipment, unit)) : w;
 }
 
 export interface NextMainInput {
@@ -40,13 +41,16 @@ export interface NextMainInput {
 export function nextMainPrescription(input: NextMainInput): { weight: number; reason: string } {
   const { exercise, slot, e1rm, baseline, baselineKind, returnPhase, bodyweight, unit } = input;
   const { targetReps, targetRIR } = targetsFor(exercise, slot, returnPhase);
-  const candidate = weightFromE1rm(e1rm, targetReps, targetRIR, exercise, bodyweight);
+  const candidate = weightFromE1rm(e1rm, targetReps, targetRIR, exercise, bodyweight, unit);
   const n = clampIncrements(exercise.family);
   // A calibration/predicted baseline was a guess, not a trusted prior prescription: don't clamp to it.
   const trusted = baseline != null && baselineKind !== 'calibration' && baselineKind !== 'predicted';
-  const { weight, clamped } = trusted
+  const c = trusted
     ? clampWeight(candidate, baseline!, exercise.increment, n)
     : { weight: candidate, clamped: false };
+  // The clamp can step below the empty bar from a bar-weight baseline: the floor wins.
+  const weight = Math.max(c.weight, minLoad(exercise.equipment, unit));
+  const clamped = c.clamped && weight === c.weight;
 
   const basis = `e1RM ${formatNumber(e1rm, 1)} ${unit} → ${targetReps} reps, ${targetRIR} in reserve`;
   const limit = clamped ? ` (limited to ±${n} increment${n > 1 ? 's' : ''} per session)` : '';
@@ -66,6 +70,8 @@ export interface NextAccessoryInput {
   increment: number;
   failCountBefore: number;
   unit: Unit;
+  /** Lightest weight allowed (see minLoad); a −1 increment never goes below it. */
+  minWeight?: number;
 }
 
 /** Double progression: all sets at repMax → +1 increment; below repMin two sessions running → −1. */
@@ -74,7 +80,7 @@ export function nextAccessoryPrescription(input: NextAccessoryInput): {
   reason: string;
   failCount: number;
 } {
-  const { sets, repMin, repMax, increment, failCountBefore, unit } = input;
+  const { sets, repMin, repMax, increment, failCountBefore, unit, minWeight = -Infinity } = input;
   const base = sets[sets.length - 1].weight;
   if (sets.every((s) => s.reps >= repMax)) {
     return {
@@ -85,12 +91,15 @@ export function nextAccessoryPrescription(input: NextAccessoryInput): {
   }
   if (sets.some((s) => s.reps < repMin)) {
     const failCount = failCountBefore + 1;
-    if (failCount >= 2) {
+    if (failCount >= 2 && base - increment >= minWeight) {
       return {
         weight: base - increment,
         failCount: 0,
         reason: `${formatSigned(-increment, unit)}: a set fell below ${repMin} reps two sessions in a row`,
       };
+    }
+    if (failCount >= 2) {
+      return { weight: base, failCount: 0, reason: `Same weight: already the lightest it can go (${formatNumber(base)} ${unit})` };
     }
     return {
       weight: base,
@@ -184,6 +193,28 @@ export function finishSessionState(input: FinishInput): FinishResult {
     };
   }
 
+  /**
+   * Double progression for an accessory's sets in one slot. The result is also kept on the exercise
+   * state, so the next time it's used without slot state of its own (a swap) it carries on from here.
+   */
+  const progressAccessory = (ex: ExerciseDef, slot: SlotDef, trained: LoggedSet[]) => {
+    const prevState = input.exerciseStates[ex.id];
+    // Only zero-rep sets: no session e1RM, but double progression still counts the failed session.
+    if (!newExStates[ex.id] && prevState) newExStates[ex.id] = { ...prevState };
+    const r = nextAccessoryPrescription({
+      sets: trained,
+      repMin: slot.repMin,
+      repMax: slot.repMax,
+      increment: ex.increment,
+      failCountBefore: prevState?.accessoryFailCount ?? 0,
+      unit,
+      minWeight: minLoad(ex.equipment, unit),
+    });
+    const exState = newExStates[ex.id] as ExerciseState | undefined;
+    if (exState) Object.assign(exState, { accessoryFailCount: r.failCount, nextWeight: r.weight, nextReason: r.reason });
+    return r;
+  };
+
   // 2. Slot-level prescriptions.
   const trainedSlotIds = new Set<string>();
   for (const slot of allSlots) {
@@ -207,9 +238,14 @@ export function finishSessionState(input: FinishInput): FinishResult {
         lastWorking = trained[trained.length - 1].weight;
         trainedSlotIds.add(slot.slotId);
       } else if (st) {
+        // A deload waiting for this slot stays until the slot is actually trained.
+        if (st.prescriptionKind === 'deload' && !deloadFlags.has(ex.id)) continue;
         baseline = st.lastPrescribedWeight;
         baselineKind = st.lastPrescribedKind;
-        lastWorking = st.lastPrescribedWeight ?? st.nextWeight;
+        // Older states have no lastWorkingWeight; a calibration "prescription" was only a placeholder.
+        lastWorking = st.lastWorkingWeight
+          ?? (st.lastPrescribedKind !== 'calibration' ? st.lastPrescribedWeight : undefined)
+          ?? st.nextWeight;
       } else {
         continue; // never trained and not trained now: on-demand prescription will use the e1RM
       }
@@ -218,7 +254,7 @@ export function finishSessionState(input: FinishInput): FinishResult {
       let reason: string;
       let kind: PrescriptionKind = 'normal';
       if (deloadFlags.has(ex.id)) {
-        nextWeight = deloadWeight(lastWorking!, ex, bodyweight);
+        nextWeight = deloadWeight(lastWorking!, ex, bodyweight, unit);
         kind = 'deload';
         reason = `Deload: 90% of your last working weight (${formatNumber(lastWorking!)} ${unit}) after two sessions below trend`;
       } else {
@@ -237,32 +273,31 @@ export function finishSessionState(input: FinishInput): FinishResult {
         slotId: slot.slotId,
         lastPrescribedWeight: trained.length ? baseline : st?.lastPrescribedWeight,
         lastPrescribedKind: trained.length ? baselineKind : st?.lastPrescribedKind,
+        lastWorkingWeight: trained.length ? lastWorking : st?.lastWorkingWeight,
         nextWeight,
         reason,
         prescriptionKind: kind,
       };
     } else if (trained.length) {
-      const exState = newExStates[ex.id];
-      const prevFail = input.exerciseStates[ex.id]?.accessoryFailCount ?? 0;
-      const r = nextAccessoryPrescription({
-        sets: trained,
-        repMin: slot.repMin,
-        repMax: slot.repMax,
-        increment: ex.increment,
-        failCountBefore: prevFail,
-        unit,
-      });
-      exState.accessoryFailCount = r.failCount;
+      const r = progressAccessory(ex, slot, trained);
       trainedSlotIds.add(slot.slotId);
       newSlotStates[slot.slotId] = {
         slotId: slot.slotId,
         lastPrescribedWeight: trained[0].prescribedWeight ?? st?.nextWeight ?? undefined,
         lastPrescribedKind: trained[0].prescriptionKind ?? st?.prescriptionKind,
+        lastWorkingWeight: trained[trained.length - 1].weight,
         nextWeight: r.weight,
         reason: r.reason,
         prescriptionKind: 'normal',
       };
     }
+
+    // Accessory swapped in for this slot today: it progresses on its own state (the slot is left alone).
+    const swapped = sets
+      .filter((s) => s.slotId === slot.slotId && s.exerciseId !== slot.exerciseId)
+      .sort((a, b) => a.setIndex - b.setIndex);
+    const swapEx = swapped.length ? exercises[swapped[0].exerciseId] : undefined;
+    if (swapEx?.type === 'accessory') progressAccessory(swapEx, slot, swapped);
   }
 
   // 3. Summary: one line per slot trained today (swapped-in exercises use their own state).

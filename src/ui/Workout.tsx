@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../db/db';
-import { discardSession, finishSession, saveSet, setRowId } from '../db/service';
+import { discardSession, finishSession, makeSwapPermanent, saveSet, setRowId } from '../db/service';
 import type { Snapshot } from '../db/service';
 import type { SessionRow, SetRow } from '../db/schema';
 import {
-  BAR_WEIGHT, buildQueue, checkGettingStronger, explainerFor, formatNumber, plateBreakdown, prescribe,
-  suggestNextWeight, targetsFor, type PrescriptionKind, type SlotDef,
+  BAR_WEIGHT, buildQueue, checkGettingStronger, explainerFor, formatNumber, plateBreakdown, targetsFor, type SlotDef,
 } from '../engine';
 import { CUES } from '../data/cues';
 import { ExerciseImage, KindBadge, ReturnBanner, RpePicker, Sheet, Stepper } from './components';
 import { RestTimer, loadRest, saveRest, type RestState } from './RestTimer';
-import { plannedSets, slotPrescription } from './prescriptions';
+import { plannedSets, setDefaults, slotPrescription } from './prescriptions';
 import { useSessionSets } from './hooks';
 
 interface Props { snap: Snapshot; session: SessionRow; onExit: () => void; onFinished: (sessionId: string) => void; }
@@ -94,19 +93,8 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
   const grouped = day.slots.filter((s) => s.group === slot.group && !skipped.includes(s.slotId)).length > 1;
 
   // Defaults for this set: the prescription for set 1, otherwise the in-session suggestion from the previous set.
-  const prev = loggedBy.get(`${slot.slotId}:${item.setIndex - 1}`);
-  let defWeight = rx.weight ?? (ex.equipment === 'barbell' ? BAR_WEIGHT[unit] : 0);
-  let defKind: PrescriptionKind = rx.kind;
-  let note: string | null = null;
-  if (item.setIndex > 0 && prev) {
-    const sug = suggestNextWeight({
-      set: prev, kind: prev.prescriptionKind, exercise: ex, repMin: slot.repMin, repMax: slot.repMax,
-      targetReps: targets.targetReps, targetRIR: targets.targetRIR, bodyweight: settings.bodyweight ?? 0, unit,
-    });
-    defWeight = sug.weight;
-    note = sug.message;
-    defKind = prev.prescriptionKind === 'calibration' ? 'normal' : prev.prescriptionKind;
-  }
+  const defaults = setDefaults(snap, slot, exId, item.setIndex, loggedBy.get(`${slot.slotId}:${item.setIndex - 1}`));
+  const { weight: defWeight, kind: defKind, note } = defaults;
   const draftKey = `${idx}|${defWeight}|${slot.slotId}|${logged?.id ?? ''}`;
   const d = draft?.key === draftKey ? draft : null;
   const weight = logged ? (d?.weight ?? logged.weight) : (d?.weight ?? defWeight);
@@ -121,15 +109,16 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
     setPendingRpe(null);
     await saveSet(db, {
       sessionId: session.id, slotId: slot.slotId, exerciseId: exId, setIndex: item.setIndex,
-      weight: p.weight, reps: p.reps, rpe, prescribedWeight: logged?.prescribedWeight ?? defWeight, prescriptionKind: kind,
+      weight: p.weight, reps: p.reps, rpe, prescribedWeight: logged ? logged.prescribedWeight : defaults.prescribedWeight, prescriptionKind: kind,
       completedAt: logged?.completedAt,
     });
     setDraft(null);
     if (!logged) {
       // "You're getting stronger" — once per exercise per session, never on a first session.
-      const soFar = [...sets.filter((s) => s.exerciseId === exId), { weight: p.weight, reps: p.reps, rpe }];
+      const before = sets.filter((s) => s.exerciseId === exId);
       const check = checkGettingStronger({
-        exercise: ex, state: snap.exerciseStates[exId], setsSoFar: soFar, bodyweight: settings.bodyweight ?? 0,
+        exercise: ex, state: snap.exerciseStates[exId], setsSoFar: [...before, { weight: p.weight, reps: p.reps, rpe }], setsBefore: before,
+        bodyweight: settings.bodyweight ?? 0,
         returnActive: settings.returnPhase.active, alreadyShown: shownStronger.current.has(exId),
       });
       if (check) {
@@ -155,8 +144,14 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
   if (next && !logged) {
     const ns = day.slots.find((s) => s.slotId === next.slotId)!;
     const nid = exerciseOf(ns);
-    const lastW = loggedBy.get(`${ns.slotId}:${next.setIndex - 1}`)?.weight ?? slotPrescription(snap, ns, nid).weight;
-    nextLine = `${exercises[nid].name}${lastW != null ? ` · ${formatNumber(lastW)} ${unit}` : ''}`;
+    // The weight the next set will be prefilled with (including any in-session suggestion).
+    const nPrev = loggedBy.get(`${ns.slotId}:${next.setIndex - 1}`);
+    // Straight sets: the next set follows this one, which isn't logged yet, so show this set's weight.
+    const nw = !nPrev && next.setIndex > 0 && ns.slotId === slot.slotId
+      ? weight
+      : setDefaults(snap, ns, nid, next.setIndex, nPrev).prescribedWeight;
+    const sign = exercises[nid].equipment === 'bodyweight' && nw != null && nw > 0 ? '+' : '';
+    nextLine = `${exercises[nid].name}${nw != null ? ` · ${sign}${formatNumber(nw)} ${unit}` : ' · calibration'}`;
   }
 
   const plates = ex.equipment === 'barbell' && weight >= BAR_WEIGHT[unit] ? plateBreakdown(weight, unit) : null;
@@ -280,15 +275,11 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
           <h2>Replace {ex.name}</h2>
           <p className="muted" style={{ margin: 0 }}>Same movement family. Logs go to the exercise you pick.</p>
           {Object.values(exercises).filter((e) => e.family === ex.family && e.id !== ex.id).concat(exId !== slot.exerciseId ? [exercises[slot.exerciseId]] : []).filter((e, i, a) => a.findIndex((x) => x.id === e.id) === i).map((alt) => {
-            const p = prescribe({
-              exercise: alt, slot, exerciseState: snap.exerciseStates[alt.id],
-              familyMembers: Object.values(exercises).map((e) => ({ exercise: e, state: snap.exerciseStates[e.id] })),
-              bodyweight: settings.bodyweight ?? 0, returnPhase: settings.returnPhase, unit,
-            });
+            // Swapping back to the slot's own exercise shows its slot state, i.e. what will actually load.
+            const p = slotPrescription(snap, slot, alt.id);
             const setSwap = async (permanent: boolean) => {
               if (permanent) {
-                await db.programDays.put({ ...day, slots: day.slots.map((s) => (s.slotId === slot.slotId ? { ...s, exerciseId: alt.id } : s)) });
-                await db.sessions.update(session.id, { swaps: session.swaps.filter((s) => s.slotId !== slot.slotId) });
+                await makeSwapPermanent(db, session.id, slot.slotId, alt.id);
               } else {
                 const swaps = session.swaps.filter((s) => s.slotId !== slot.slotId);
                 if (alt.id !== slot.exerciseId) swaps.push({ slotId: slot.slotId, fromExerciseId: slot.exerciseId, toExerciseId: alt.id });

@@ -10,7 +10,7 @@ import type {
   SlotState,
   Unit,
 } from './types';
-import { floorToIncrement, formatNumber } from './units';
+import { floorToIncrement, formatNumber, minLoad } from './units';
 
 export const PREDICTION_HAIRCUT = 0.95;
 
@@ -36,17 +36,22 @@ export function targetsFor(
   return { targetReps: slot.repMin, targetRIR: 2 };
 }
 
-/** e1RM → weight for a rep/RIR target, in logged terms, rounded down to the increment. */
+/**
+ * e1RM → weight for a rep/RIR target, in logged terms, rounded down to the increment.
+ * With `unit`, never below the equipment's minimum (e.g. the empty bar).
+ */
 export function weightFromE1rm(
   e1rm: number,
   targetReps: number,
   targetRIR: number,
   exercise: Pick<ExerciseDef, 'equipment' | 'increment'>,
   bodyweight: number,
+  unit?: Unit,
 ): number {
   const load = e1rm / (1 + (targetReps + targetRIR) / 30);
   const logged = exercise.equipment === 'bodyweight' ? load - bodyweight : load;
-  return floorToIncrement(logged, exercise.increment);
+  const w = floorToIncrement(logged, exercise.increment);
+  return unit ? Math.max(w, minLoad(exercise.equipment, unit)) : w;
 }
 
 /** Clamp a candidate weight to ±(n × increment) of the previous prescription. */
@@ -133,6 +138,14 @@ export function prescribe(input: PrescribeInput): Prescription {
   }
 
   if (exerciseState) {
+    if (exercise.type === 'accessory' && exerciseState.nextWeight != null) {
+      return {
+        ...base,
+        weight: exerciseState.nextWeight,
+        kind: 'normal',
+        reason: exerciseState.nextReason ?? `${formatNumber(exerciseState.nextWeight)} ${unit}: from your last session`,
+      };
+    }
     if (exercise.type === 'accessory' && exerciseState.lastWeight != null) {
       return {
         ...base,
@@ -143,7 +156,7 @@ export function prescribe(input: PrescribeInput): Prescription {
           : `${formatNumber(exerciseState.lastWeight)} ${unit}: your last working weight`,
       };
     }
-    const w = weightFromE1rm(exerciseState.e1rm, targetReps, targetRIR, exercise, bodyweight);
+    const w = weightFromE1rm(exerciseState.e1rm, targetReps, targetRIR, exercise, bodyweight, unit);
     if (exerciseState.calibrateFirst) {
       return {
         ...base,
@@ -163,7 +176,7 @@ export function prescribe(input: PrescribeInput): Prescription {
   const source = pickPredictionSource(exercise, familyMembers);
   if (source) {
     const predicted = predictE1rm(source, exercise);
-    const w = weightFromE1rm(predicted, targetReps, targetRIR, exercise, bodyweight);
+    const w = weightFromE1rm(predicted, targetReps, targetRIR, exercise, bodyweight, unit);
     return {
       ...base,
       weight: w,

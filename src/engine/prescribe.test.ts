@@ -161,3 +161,14 @@ describe('seeding and calibration', () => {
     expect(p).toMatchObject({ weight: 102.5, kind: 'normal', reason: 'x' });
   });
 });
+
+describe('seeding bodyweight accessories', () => {
+  it('detraining applies to effective load, so an assisted lifter gets MORE assistance after time off', () => {
+    // −20 kg assistance at 80 kg: effective 60 × 0.85 = 51 → −29 → rounds down to −30
+    expect(seedExercise(lib['pull-up'], -20, 8, '6-plus', 80, 1).lastWeight).toBe(-30);
+    // +10 kg added: 90 × 0.9 = 81 → +1 → rounds down to 0
+    expect(seedExercise(lib['pull-up'], 10, 5, '3-6', 80, 1).lastWeight).toBe(0);
+    // no time off: unchanged
+    expect(seedExercise(lib['pull-up'], -20, 8, 'under-1', 80, 1).lastWeight).toBe(-20);
+  });
+});

@@ -54,8 +54,9 @@ export function RestTimer({ rest, sound, onChange }: { rest: RestState; sound: b
       className="rest"
       role="timer"
       onClick={() => onChange({ endsAt: Math.max(rest.endsAt, Date.now()) + 30000, total: rest.total + 30 })}
-      onTouchStart={(e) => (touchX.current = e.touches[0].clientX)}
-      onTouchEnd={(e) => { if (touchX.current != null && Math.abs(e.changedTouches[0].clientX - touchX.current) > 70) onChange(null); touchX.current = null; }}
+      // stopPropagation: the workout screen's own swipe (previous/next set) must not also fire.
+      onTouchStart={(e) => { e.stopPropagation(); touchX.current = e.touches[0].clientX; }}
+      onTouchEnd={(e) => { e.stopPropagation(); if (touchX.current != null && Math.abs(e.changedTouches[0].clientX - touchX.current) > 70) onChange(null); touchX.current = null; }}
     >
       <div className="fill" style={{ width: `${pct}%` }} />
       <span className="t">{remaining === 0 ? 'Go! Next set' : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`}</span>
