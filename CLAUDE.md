@@ -54,7 +54,25 @@ Exercise names in this table must match the names in the exercise library below 
 
 Bench press appears twice with different rep ranges. Both slots share one e1RM (state is per exercise), but the "last prescribed weight" used for clamping is stored **per program slot**, because the 4–6 slot is always heavier than the 6–8 slot.
 
-The program must be editable in Settings: add, remove, reorder, pair or unpair exercises, and change sets, reps, type and equipment. Seed it with the table above.
+The program must be editable in Settings: add, remove, reorder, pair or unpair exercises, and change sets, reps, type and equipment. Seed it with the table above as the starting template.
+
+### Program builder (start from scratch)
+The user must be able to build a program from an empty slate with any exercises they want. The table above is just one built-in template.
+- **Programs**: the user can keep several saved programs and pick one as active. "New program" offers two choices: **Blank** or **Start from template** (the 3-day template above, copied so edits don't change the original). Programs can be renamed, duplicated and deleted. A program can't be deleted while active; deleting a program never deletes workout history.
+- **Days**: 1–7 days per program. Each day gets an editable name (default "Day A", "Day B", …). Days can be added, removed and reordered. Rotation follows the active program's day order.
+- **Slots**: add any exercise from the library to any day. Per slot, set the sets, rep range and group (superset pairing), and reorder by drag. Each new slot gets a new stable `slotId`.
+- **Progression style per slot**: "Estimated max" (the main-lift model) or "Reps first" (double progression). It defaults from the exercise: barbell compound lifts default to Estimated max, everything else to Reps first. The user can change it.
+- **Switching programs** keeps all exercise state (e1RM, history), because state is per exercise. A slot whose exercise has no state gets a predicted or calibration set as usual. Switching the active program does not restart the return phase.
+- **Empty states**: a day with no exercises can't be started; Home prompts the user to add exercises. With no program at all, Home shows "Create your first program".
+
+### Exercise library
+- Bundle a broad library (aim for 150+ exercises), taken from the same openly licensed dataset as the images if its licence allows, covering barbell, dumbbell, machine, cable, bodyweight, kettlebell and band exercises. Each exercise needs a name, equipment, primary muscle group and, where it fits, a movement family. Every exercise in the template must be included under the exact template name.
+- **Library screen**: search by name, filter by muscle group and equipment, and show each exercise's image and current e1RM if it has one.
+- **Custom exercises**: the user can create their own exercise with a name, equipment (which sets the increment), primary muscle, a default progression style, and an optional movement family plus ratio. A custom exercise behaves exactly like a built-in one. Custom exercises can be edited, and deleted only if they have no logged sets; otherwise the option is to hide them from the library.
+- An exercise without a family can never be predicted. Its first session uses a calibration set.
+
+### Swapping to any exercise
+The swap sheet's top section shows same-family alternatives with predicted weights. Below that, an "All exercises" search lets the user swap to anything in the library. A swap to an exercise with no state and no family relative gets a calibration set.
 
 ### Groups (supersets)
 Exercises that share a group number on the same day are a superset: alternate their sets (set 1 of the first exercise, set 1 of the second, set 2 of the first, and so on). A group with one exercise is straight sets. The pairs are non-competing movements, so alternating saves time without hurting performance.
@@ -62,6 +80,8 @@ Exercises that share a group number on the same day are a superset: alternate th
 - If paired exercises have different set counts (including when the return phase removes a set), the extra sets run as straight sets at the end of the group.
 
 ## Progression engine
+
+Throughout this section, "main lift" means any slot with progression style **Estimated max**, and "accessory" means any slot with **Reps first**. The engine keys off the slot's progression style, never the exercise's name or the template's Type column.
 
 ### Logging per set
 Weight, reps, and an effort rating on a 6–10 scale (RPE), asked after each set with the prompt "How hard was that set?". Required for main lifts, optional for accessories. Show the five values as large tappable numbers, each with a coloured bar running green (6) → yellow (7) → orange (8) → red-orange (9) → red (10). Show a plain-language label under the selected value:
@@ -136,7 +156,7 @@ Exercise library (ratios are starting guesses, editable in Settings; dumbbell ra
 - **Triceps**: Cable pushdown 1.00 (anchor), Overhead cable extension 0.85
 
 ### Swapping exercises
-On the workout screen, any exercise can be swapped for another in the same family (for example when the bench is taken). Show a swap sheet listing alternatives as cards, with the prescribed weight already computed for each: the exercise's own state if it has one, otherwise a prediction. A swap applies to that session only, unless the user chooses "Make permanent", which edits the program slot. Logs go to the swapped-in exercise's own history.
+On the workout screen, any exercise can be swapped (for example when the bench is taken). The swap sheet lists same-family alternatives first as cards, then an "All exercises" search (see Program builder). Each card shows the prescribed weight already computed: the exercise's own state if it has one, otherwise a prediction, otherwise "Calibration". A swap applies to that session only, unless the user chooses "Make permanent", which edits the program slot. Logs go to the swapped-in exercise's own history.
 
 ### "You're getting stronger"
 - After each set, compute a provisional smoothed e1RM as if the session ended now.
@@ -144,13 +164,14 @@ On the workout screen, any exercise can be swapped for another in the same famil
 - In the session summary, show the final celebration card: the title "You're getting stronger!", the line "New estimated one-rep max: old → new", and a pill showing "+delta ↑".
 
 ## Data model (Dexie)
-- `exercises`: id, name, type (`main` | `accessory`), equipment, increment, family, familyRatio, notes
-- `programDays`: id, label (A/B/C), order, slots[{slotId, exerciseId, group, sets, repMin, repMax}]
+- `exercises`: id, name, equipment, increment, primaryMuscle, defaultProgressionStyle (`estimatedMax` | `repsFirst`), family?, familyRatio?, isCustom, hidden, imageRef?, notes
+- `programs`: id, name, createdAt, isTemplate
+- `programDays`: id, programId, name, order, slots[{slotId, exerciseId, progressionStyle, group, sets, repMin, repMax}]
 - `slotState`: slotId, lastPrescribedWeight, nextWeight, reason, prescriptionKind
 - `sessions`: id, dayId, startedAt, finishedAt, endedEarly, swaps[{slotId, fromExerciseId, toExerciseId}]
 - `sets`: id, sessionId, slotId, exerciseId, setIndex, weight, reps, rpe?, prescribedWeight, prescriptionKind (`normal` | `calibration` | `predicted` | `deload`), completedAt
 - `exerciseState`: exerciseId, e1rm, missCount, accessoryFailCount, predictedFrom?, updatedAt
-- `settings`: units, increments, bodyweight, restTimes, keepScreenAwake, timerSound, returnPhase {active, sessionsCompleted}
+- `settings`: activeProgramId, units, increments, bodyweight, restTimes, keepScreenAwake, timerSound, returnPhase {active, sessionsCompleted}
 
 ## Screens
 1. **Home**: next day (A/B/C) with the exercise list and prescribed weights, a "Start workout" button, the last-session date, and the return-phase banner when active.
@@ -203,5 +224,6 @@ Include a test that simulates 8 weeks of plausible logs starting from a return p
 3. Onboarding seeding, history, exercise charts
 4. Settings, program editor, export/import
 5. PWA polish (offline, icons, home-screen install)
+6. Program builder and exercise library: multiple programs, blank or template start, any exercise in any slot, custom exercises, swap to any exercise. Includes a Dexie schema migration that turns the existing single program into a saved program named "3-day template (mine)" without losing history or slot state.
 
 Commit after each milestone with a clear message. Run tests before every commit.
