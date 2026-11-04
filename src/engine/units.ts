@@ -39,3 +39,13 @@ export function formatSigned(value: number, unit: Unit): string {
   const sign = value < 0 ? '−' : '+';
   return `${sign}${formatNumber(Math.abs(value))} ${unit}`;
 }
+
+/** Convert between units, then round down to the new increment (for prescriptions). */
+export function convertRounded(value: number, from: Unit, to: Unit, increment: number): number {
+  return floorToIncrement(convertWeight(value, from, to), increment);
+}
+
+/** Convert a logged weight for history: keep one decimal. */
+export function convertLogged(value: number, from: Unit, to: Unit): number {
+  return Math.round(convertWeight(value, from, to) * 10) / 10;
+}
