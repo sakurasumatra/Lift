@@ -8,7 +8,7 @@ import {
 } from '../engine';
 import { CUES } from '../data/cues';
 import { ExerciseImage, KindBadge, ReturnBanner, RpePicker, Sheet, Stepper } from './components';
-import { RestTimer, loadRest, saveRest, type RestState } from './RestTimer';
+import { RestTimer, loadRest, primeAudio, saveRest, type RestState } from './RestTimer';
 import { plannedSets, setDefaults, slotPrescription } from './prescriptions';
 import { useSessionSets } from './hooks';
 import { SwapSheet } from './SwapSheet';
@@ -228,7 +228,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
         <div className="actions">
           <button className="tilebtn" onClick={() => setSheet('info')}><span>ⓘ</span>Info</button>
           <button className="tilebtn" disabled={!swapAllowed} style={{ opacity: swapAllowed ? 1 : 0.45 }} onClick={() => setSheet('swap')}><span>⇄</span>Replace</button>
-          <button className="btn primary" onClick={() => setPendingRpe({ weight, reps })}>{logged ? 'Update' : 'Done'}</button>
+          <button className="btn primary" onClick={() => { if (settings.timerSound) primeAudio(); setPendingRpe({ weight, reps }); }}>{logged ? 'Update' : 'Done'}</button>
         </div>
 
         {allDone && !logged ? null : nextLine && <div className="nextup"><span>Next up</span><b>{nextLine}</b></div>}

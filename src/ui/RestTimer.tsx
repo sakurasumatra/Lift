@@ -10,10 +10,27 @@ export function saveRest(r: RestState | null) {
   try { if (r) localStorage.setItem(KEY, JSON.stringify(r)); else localStorage.removeItem(KEY); } catch { /* storage unavailable */ }
 }
 
-function beep() {
+let audio: AudioContext | null = null;
+
+/**
+ * iOS Safari only lets a page start sound from inside a user gesture: an AudioContext created when the timer
+ * runs out stays suspended and plays nothing. So the context is created (or resumed) when the user taps Done,
+ * and the beep at zero reuses it.
+ */
+export function primeAudio(): void {
   try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctx();
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    audio ??= new Ctx();
+    if (audio.state === 'suspended') audio.resume().catch(() => { /* not allowed yet */ });
+  } catch { /* audio unavailable */ }
+}
+
+export function beep(): void {
+  try {
+    if (!audio) primeAudio();
+    const ctx = audio;
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.frequency.value = 880;
@@ -53,7 +70,7 @@ export function RestTimer({ rest, sound, onChange }: { rest: RestState; sound: b
     <div
       className="rest"
       role="timer"
-      onClick={() => onChange({ endsAt: Math.max(rest.endsAt, Date.now()) + 30000, total: rest.total + 30 })}
+      onClick={() => { if (sound) primeAudio(); onChange({ endsAt: Math.max(rest.endsAt, Date.now()) + 30000, total: rest.total + 30 }); }}
       // stopPropagation: the workout screen's own swipe (previous/next set) must not also fire.
       onTouchStart={(e) => { e.stopPropagation(); touchX.current = e.touches[0].clientX; }}
       onTouchEnd={(e) => { e.stopPropagation(); if (touchX.current != null && Math.abs(e.changedTouches[0].clientX - touchX.current) > 70) onChange(null); touchX.current = null; }}
