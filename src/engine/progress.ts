@@ -167,9 +167,11 @@ export function finishSessionState(input: FinishInput): FinishResult {
     const isFirst = !prev || prev.sessionCount === 0;
 
     let missCount = prev?.missCount ?? 0;
+    // A deload session is light on purpose: it always lands below trend, so it never counts as a miss.
+    const deloadSession = exSets.some((s) => s.prescriptionKind === 'deload');
     if (rpActive) {
       missCount = 0; // misses and deloads are disabled in the return phase
-    } else if (maxTracked.has(exId) && !isFirst) {
+    } else if (maxTracked.has(exId) && !isFirst && !deloadSession) {
       if (isMiss(session, prev!.e1rm)) {
         missCount += 1;
         if (missCount >= 2) {

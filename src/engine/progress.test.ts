@@ -94,6 +94,30 @@ describe('miss detection and deload', () => {
     expect(r.slotStates.A2.nextWeight).toBeLessThanOrEqual(65 + 2.5);
   });
 
+  it('the deload session itself never counts as a miss, so a flat session after it cannot trigger a second deload', () => {
+    const deload = finishSessionState(finishInput({
+      exerciseStates: { 'bench-press': exState('bench-press', 100, { missCount: 1 }) },
+      slotStates: start().slotStates,
+      sets: benchSets('A2', 73, 6, 9),
+    }));
+    expect(deload.deloaded).toEqual(['bench-press']);
+    // Deload session: 65 kg, rated hard, far below trend — not a miss.
+    const lightDay = finishSessionState(finishInput({
+      exerciseStates: deload.exerciseStates,
+      slotStates: deload.slotStates,
+      sets: benchSets('A2', 65, 6, 9).map((s) => ({ ...s, prescribedWeight: 65, prescriptionKind: 'deload' as const })),
+    }));
+    expect(lightDay.exerciseStates['bench-press'].missCount).toBe(0);
+    // A flat session right after: one miss, no second deload.
+    const next = finishSessionState(finishInput({
+      exerciseStates: { ...deload.exerciseStates, ...lightDay.exerciseStates },
+      slotStates: { ...deload.slotStates, ...lightDay.slotStates },
+      sets: benchSets('A2', 65, 5, 10),
+    }));
+    expect(next.exerciseStates['bench-press'].missCount).toBe(1);
+    expect(next.deloaded).toEqual([]);
+  });
+
   it('a non-miss between misses breaks the streak', () => {
     const r = finishSessionState(finishInput({
       exerciseStates: { 'bench-press': exState('bench-press', 100, { missCount: 1 }) },

@@ -115,7 +115,7 @@ Store RPE; the engine works in RIR = 10 − RPE. If RPE is missing (accessories 
   - If `reps ≥ repMax AND RIR ≥ 2` → next set +1 increment
   - Else if `reps < repMin OR (RIR = 0 AND reps < targetReps)` → next set −1 increment
   - Otherwise keep the weight
-- Stall and deload: at session end, before updating the smoothed e1RM, a session is a "miss" if session e1RM < 98% of the *previous* smoothed e1RM. Two consecutive misses → that exercise's next prescription in every slot = 90% of that slot's last working weight (rounded down), reason "Deload"; reset the miss count. The e1RM model then rebuilds the weight from there, within the clamp. Misses and deloads are disabled during the return phase.
+- Stall and deload: at session end, before updating the smoothed e1RM, a session is a "miss" if session e1RM < 98% of the *previous* smoothed e1RM. Two consecutive misses → that exercise's next prescription in every slot = 90% of that slot's last working weight (rounded down), reason "Deload"; reset the miss count. The e1RM model then rebuilds the weight from there, within the clamp. The deload session itself never counts as a miss (it is light on purpose). Misses and deloads are disabled during the return phase.
 
 ### Accessories — double progression
 - If every set reached repMax → next session +1 increment.
