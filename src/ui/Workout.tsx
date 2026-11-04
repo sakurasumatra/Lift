@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../db/db';
 import { discardSession, finishSession, saveSet, setRowId } from '../db/service';
+import { setBodyweight } from '../db/settingsService';
 import type { Snapshot } from '../db/service';
 import type { SessionRow, SetRow } from '../db/schema';
 import {
@@ -295,7 +296,7 @@ export function Workout({ snap, session, onExit, onFinished }: Props) {
           <h2>What’s your bodyweight?</h2>
           <p className="muted" style={{ margin: 0 }}>{ex.name} uses your bodyweight in its maths (assistance counts as negative added load).</p>
           <input className="num" inputMode="decimal" autoFocus placeholder={`Bodyweight in ${unit}`} value={bwInput} onChange={(e) => setBwInput(e.target.value)} />
-          <button className="btn primary block" disabled={!(parseFloat(bwInput) > 0)} onClick={() => db.settings.update('main', { bodyweight: parseFloat(bwInput.replace(',', '.')) })}>Save</button>
+          <button className="btn primary block" disabled={!(parseFloat(bwInput) > 0)} onClick={() => setBodyweight(db, parseFloat(bwInput.replace(',', '.')))}>Save</button>
           <button className="btn secondary block" onClick={() => { setSheet(null); db.sessions.update(session.id, { skippedSlotIds: [...skipped, slot.slotId] }); }}>Skip this exercise</button>
         </Sheet>
       )}

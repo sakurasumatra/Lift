@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { db } from '../db/db';
 import { exportData, importData } from '../db/backup';
 import type { Snapshot } from '../db/service';
-import { resetAllData, setIncrement, setRestTimes, switchUnits } from '../db/settingsService';
+import { resetAllData, setBodyweight, setIncrement, setRestTimes, switchUnits } from '../db/settingsService';
 import type { Equipment, Unit } from '../engine';
 import imageSources from '../data/imageSources.json';
 import { NumField } from './fields';
@@ -65,7 +65,7 @@ export function Settings({ snap, onBack, initialSub }: { snap: Snapshot; onBack:
           {(['kg', 'lb'] as Unit[]).map((u) => <button key={u} className={`btn grow ${s.units === u ? 'primary' : 'secondary'}`} onClick={() => changeUnit(u)}>{u}</button>)}
         </div>
         <label className="muted" style={{ display: 'block', marginTop: 12 }}>Bodyweight ({s.units}) — used for pull-ups and other bodyweight lifts
-          <NumField label="Bodyweight" value={s.bodyweight ?? 0} onCommit={(v) => update({ bodyweight: v > 0 ? v : null })} />
+          <NumField label="Bodyweight" value={s.bodyweight ?? 0} onCommit={(v) => setBodyweight(db, v > 0 ? v : null)} />
         </label>
       </div>
 

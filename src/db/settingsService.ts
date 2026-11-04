@@ -1,5 +1,5 @@
 import type { Equipment, ExerciseDef, RestTimes, SlotDef, Unit } from '../engine';
-import { DEFAULT_INCREMENTS, convertLogged, convertRounded, convertWeight, clean, minLoad } from '../engine';
+import { DEFAULT_INCREMENTS, convertLogged, convertRounded, convertWeight, clean, floorToIncrement, minLoad } from '../engine';
 import { buildExerciseLibrary, buildSeedProgram } from '../data/library';
 import { ensureSeeded, type LiftDB } from './db';
 
@@ -79,6 +79,51 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
       increments,
       bodyweight: settings.bodyweight == null ? null : Math.round(convertWeight(settings.bodyweight, from, to) * 10) / 10,
     });
+  });
+}
+
+/**
+ * Pull-ups and other bodyweight lifts store their prescriptions as added load (negative = assistance), worked
+ * out with the bodyweight at the time. When the bodyweight changes, shift them so the total load stays the same:
+ * 2 kg heavier → 2 kg less added load (or 2 kg more assistance), rounded down to the increment. The e1RM is
+ * already total load, so it doesn't change. Must run inside a transaction covering exercises, programDays,
+ * slotState and exerciseState.
+ */
+export async function rebaseBodyweightPrescriptions(db: LiftDB, oldBw: number | null, newBw: number | null): Promise<void> {
+  if (oldBw == null || newBw == null || oldBw === newBw) return;
+  const shift = oldBw - newBw;
+  const inc = new Map((await db.exercises.toArray()).filter((e) => e.equipment === 'bodyweight').map((e) => [e.id, e.increment]));
+  if (!inc.size) return;
+  const moved = (v: number, exId: string) => floorToIncrement(v + shift, inc.get(exId)!);
+  const note = ' · adjusted for your new bodyweight';
+
+  const exStates = (await db.exerciseState.toArray()).filter((s) => inc.has(s.exerciseId));
+  await db.exerciseState.bulkPut(exStates.map((s) => ({
+    ...s,
+    lastWeight: s.lastWeight == null ? undefined : moved(s.lastWeight, s.exerciseId),
+    nextWeight: s.nextWeight == null ? undefined : moved(s.nextWeight, s.exerciseId),
+  })));
+
+  const slotEx = new Map((await db.programDays.toArray()).flatMap((d) => d.slots.map((s) => [s.slotId, s.exerciseId] as [string, string])));
+  const slotStates = (await db.slotState.toArray()).filter((s) => inc.has(slotEx.get(s.slotId) ?? ''));
+  await db.slotState.bulkPut(slotStates.map((s) => {
+    const exId = slotEx.get(s.slotId)!;
+    return {
+      ...s,
+      nextWeight: moved(s.nextWeight, exId),
+      lastPrescribedWeight: s.lastPrescribedWeight == null ? undefined : moved(s.lastPrescribedWeight, exId),
+      lastWorkingWeight: s.lastWorkingWeight == null ? undefined : clean(s.lastWorkingWeight + shift),
+      reason: s.reason.endsWith(note) ? s.reason : s.reason + note,
+    };
+  }));
+}
+
+/** Save the bodyweight; pull-up (and other bodyweight-lift) prescriptions follow it. */
+export async function setBodyweight(db: LiftDB, value: number | null): Promise<void> {
+  await db.transaction('rw', db.settings, db.exercises, db.programDays, db.slotState, db.exerciseState, async () => {
+    const old = (await db.settings.get('main'))!.bodyweight;
+    await rebaseBodyweightPrescriptions(db, old, value);
+    await db.settings.update('main', { bodyweight: value });
   });
 }
 
