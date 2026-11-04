@@ -119,6 +119,21 @@ describe('unit switching: review fixes', () => {
     expect(after.items[0].nextWeight!).toBeCloseTo(before.items[0].nextWeight! * 2.20462, -1);
     expect((await db.slotState.get('A1'))!.lastWorkingWeight).toBeCloseTo(220.5, 1);
   });
+
+  it('never re-rounds a barbell prescription below the empty bar (20 kg → 45 lb, not 40 lb)', async () => {
+    // 20 kg = 44.09 lb, which rounds DOWN to 40 lb: lighter than the 45 lb bar.
+    await db.slotState.put({ slotId: 'C2', lastPrescribedWeight: 20, nextWeight: 20, reason: 'x', prescriptionKind: 'normal' });
+    await db.exerciseState.put({ exerciseId: 'overhead-press', e1rm: 26, missCount: 0, accessoryFailCount: 0, updatedAt: 1, sessionCount: 1, lastWeight: 20, nextWeight: 20 });
+    // Dumbbells and machines still floor at 0 and bodyweight assistance keeps its sign.
+    await db.slotState.put({ slotId: 'C3', lastPrescribedWeight: -20, nextWeight: -20, reason: 'x', prescriptionKind: 'normal' });
+    await switchUnits(db, 'lb');
+    expect(await db.slotState.get('C2')).toMatchObject({ nextWeight: 45, lastPrescribedWeight: 45 });
+    expect(await db.exerciseState.get('overhead-press')).toMatchObject({ lastWeight: 45, nextWeight: 45 });
+    expect((await db.slotState.get('C3'))!.nextWeight).toBe(-45); // −44.09 rounds down to −45
+    // and back: 45 lb = 20.4 kg → 20 kg, the bar again
+    await switchUnits(db, 'kg');
+    expect((await db.slotState.get('C2'))!.nextWeight).toBe(20);
+  });
 });
 
 describe('program editor: rep-range changes', () => {

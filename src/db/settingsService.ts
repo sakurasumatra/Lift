@@ -1,5 +1,5 @@
 import type { Equipment, ExerciseDef, RestTimes, SlotDef, Unit } from '../engine';
-import { DEFAULT_INCREMENTS, convertLogged, convertRounded, convertWeight, clean } from '../engine';
+import { DEFAULT_INCREMENTS, convertLogged, convertRounded, convertWeight, clean, minLoad } from '../engine';
 import { buildExerciseLibrary, buildSeedProgram } from '../data/library';
 import { ensureSeeded, type LiftDB } from './db';
 
@@ -15,27 +15,34 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
     const increments = { ...DEFAULT_INCREMENTS[to] };
 
     const exercises = await db.exercises.toArray();
-    const inc = new Map<string, number>();
-    for (const e of exercises) { e.increment = increments[e.equipment]; inc.set(e.id, e.increment); }
+    const exById = new Map<string, ExerciseDef>();
+    for (const e of exercises) { e.increment = increments[e.equipment]; exById.set(e.id, e); }
     await db.exercises.bulkPut(exercises);
+    // A prescription in the new unit: rounded down to the new increment, but never below the empty bar
+    // (20 kg is 44.09 lb, which would otherwise round down to 40 lb).
+    const rx = (value: number, exerciseId: string | undefined): number => {
+      const ex = exerciseId ? exById.get(exerciseId) : undefined;
+      const w = convertRounded(value, from, to, ex?.increment ?? 1);
+      return ex ? Math.max(w, minLoad(ex.equipment, to)) : w;
+    };
 
     const exStates = await db.exerciseState.toArray();
     await db.exerciseState.bulkPut(exStates.map((s) => ({
       ...s,
       e1rm: clean(convertWeight(s.e1rm, from, to)),
-      lastWeight: s.lastWeight == null ? undefined : convertRounded(s.lastWeight, from, to, inc.get(s.exerciseId) ?? 1),
-      nextWeight: s.nextWeight == null ? undefined : convertRounded(s.nextWeight, from, to, inc.get(s.exerciseId) ?? 1),
+      lastWeight: s.lastWeight == null ? undefined : rx(s.lastWeight, s.exerciseId),
+      nextWeight: s.nextWeight == null ? undefined : rx(s.nextWeight, s.exerciseId),
     })));
 
     const days = await db.programDays.toArray();
     const slotEx = new Map<string, string>(days.flatMap((d) => d.slots.map((s) => [s.slotId, s.exerciseId] as [string, string])));
     const slotStates = await db.slotState.toArray();
     await db.slotState.bulkPut(slotStates.map((s) => {
-      const step = inc.get(slotEx.get(s.slotId) ?? '') ?? 1;
+      const exId = slotEx.get(s.slotId);
       return {
         ...s,
-        nextWeight: convertRounded(s.nextWeight, from, to, step),
-        lastPrescribedWeight: s.lastPrescribedWeight == null ? undefined : convertRounded(s.lastPrescribedWeight, from, to, step),
+        nextWeight: rx(s.nextWeight, exId),
+        lastPrescribedWeight: s.lastPrescribedWeight == null ? undefined : rx(s.lastPrescribedWeight, exId),
         lastWorkingWeight: s.lastWorkingWeight == null ? undefined : convertLogged(s.lastWorkingWeight, from, to),
         reason: `Converted from ${from} to ${to} and rounded to your ${to} increment`,
       };
@@ -56,7 +63,7 @@ export async function switchUnits(db: LiftDB, to: Unit): Promise<void> {
         ...s.summary,
         items: s.summary.items.map((it) => ({
           ...it,
-          nextWeight: it.nextWeight == null ? null : convertRounded(it.nextWeight, from, to, inc.get(it.exerciseId) ?? 1),
+          nextWeight: it.nextWeight == null ? null : rx(it.nextWeight, it.exerciseId),
         })),
         stronger: s.summary.stronger.map((c) => ({
           ...c,
